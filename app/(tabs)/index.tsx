@@ -1,0 +1,307 @@
+import React, { useState, useCallback } from 'react';
+import {
+    View,
+    Text,
+    FlatList,
+    TouchableOpacity,
+    StyleSheet,
+    TextInput,
+    RefreshControl,
+    Dimensions,
+    Animated,
+} from 'react-native';
+import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useMemos } from '../../src/contexts/MemoContext';
+import { useThemeColors, Spacing, FontSize, BorderRadius } from '../../src/theme';
+import { MemoWithTriggers, MEMO_COLORS, MemoColor } from '../../src/types/models';
+import { useColorScheme } from 'react-native';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_MARGIN = Spacing.sm;
+const CARD_WIDTH = (SCREEN_WIDTH - Spacing.lg * 2 - CARD_MARGIN) / 2;
+
+export default function MemoListScreen() {
+    const { memos, loading, createMemo, refreshMemos } = useMemos();
+    const colors = useThemeColors();
+    const colorScheme = useColorScheme();
+    const [searchQuery, setSearchQuery] = useState('');
+    const [refreshing, setRefreshing] = useState(false);
+
+    const filteredMemos = searchQuery.trim()
+        ? memos.filter(
+            m =>
+                m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                m.content.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+        : memos;
+
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await refreshMemos();
+        setRefreshing(false);
+    }, [refreshMemos]);
+
+    const handleCreateMemo = async () => {
+        const memo = await createMemo();
+        router.push(`/memo/${memo.id}`);
+    };
+
+    const getCardColor = (color: MemoColor) => {
+        const colorDef = MEMO_COLORS[color];
+        return colorScheme === 'dark' ? colorDef.bgDark : colorDef.bg;
+    };
+
+    const getTriggerIcon = (type: string) => {
+        switch (type) {
+            case 'datetime': return 'calendar';
+            case 'timer': return 'timer';
+            case 'location_enter': return 'enter';
+            case 'location_exit': return 'exit';
+            default: return 'notifications';
+        }
+    };
+
+    const renderMemoCard = ({ item }: { item: MemoWithTriggers }) => (
+        <TouchableOpacity
+            style={[
+                styles.card,
+                {
+                    backgroundColor: getCardColor(item.color),
+                    borderColor: item.color === 'default' ? colors.border : 'transparent',
+                    borderWidth: item.color === 'default' ? 1 : 0,
+                    shadowColor: colors.cardShadow,
+                },
+            ]}
+            onPress={() => router.push(`/memo/${item.id}`)}
+            activeOpacity={0.7}
+        >
+            {item.isPinned && (
+                <View style={styles.pinBadge}>
+                    <Ionicons name="pin" size={12} color={colors.primary} />
+                </View>
+            )}
+            {item.title ? (
+                <Text
+                    style={[styles.cardTitle, { color: colorScheme === 'dark' ? '#F5F5F7' : '#1A1A2E' }]}
+                    numberOfLines={2}
+                >
+                    {item.title}
+                </Text>
+            ) : null}
+            {item.content ? (
+                <Text
+                    style={[styles.cardContent, { color: colorScheme === 'dark' ? '#D1D5DB' : '#4B5563' }]}
+                    numberOfLines={6}
+                >
+                    {item.content}
+                </Text>
+            ) : null}
+            {item.triggers.length > 0 && (
+                <View style={styles.triggerBadges}>
+                    {item.triggers.map(trigger => (
+                        <View
+                            key={trigger.id}
+                            style={[
+                                styles.triggerBadge,
+                                {
+                                    backgroundColor: trigger.isActive
+                                        ? `${colors.primary}20`
+                                        : `${colors.textTertiary}15`,
+                                },
+                            ]}
+                        >
+                            <Ionicons
+                                name={getTriggerIcon(trigger.type) as any}
+                                size={11}
+                                color={trigger.isActive ? colors.primary : colors.textTertiary}
+                            />
+                            <Text
+                                style={[
+                                    styles.triggerBadgeText,
+                                    { color: trigger.isActive ? colors.primary : colors.textTertiary },
+                                ]}
+                            >
+                                {trigger.type === 'datetime' ? '日時' :
+                                    trigger.type === 'timer' ? 'タイマー' :
+                                        trigger.type === 'location_enter' ? '入場' : '退場'}
+                            </Text>
+                        </View>
+                    ))}
+                </View>
+            )}
+        </TouchableOpacity>
+    );
+
+    const renderEmptyState = () => (
+        <View style={styles.emptyState}>
+            <Ionicons name="document-text-outline" size={64} color={colors.textTertiary} />
+            <Text style={[styles.emptyTitle, { color: colors.textSecondary }]}>
+                メモがありません
+            </Text>
+            <Text style={[styles.emptySubtitle, { color: colors.textTertiary }]}>
+                + ボタンをタップして新しいメモを作成しましょう
+            </Text>
+        </View>
+    );
+
+    return (
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+            {/* Search Bar */}
+            <View style={[styles.searchContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Ionicons name="search" size={18} color={colors.textTertiary} />
+                <TextInput
+                    style={[styles.searchInput, { color: colors.text }]}
+                    placeholder="メモを検索..."
+                    placeholderTextColor={colors.textTertiary}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                />
+                {searchQuery ? (
+                    <TouchableOpacity onPress={() => setSearchQuery('')}>
+                        <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                ) : null}
+            </View>
+
+            {/* Memo Grid */}
+            <FlatList
+                data={filteredMemos}
+                renderItem={renderMemoCard}
+                keyExtractor={(item) => item.id}
+                numColumns={2}
+                columnWrapperStyle={styles.row}
+                contentContainerStyle={[
+                    styles.listContent,
+                    filteredMemos.length === 0 && styles.listEmpty,
+                ]}
+                ListEmptyComponent={!loading ? renderEmptyState : null}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        tintColor={colors.primary}
+                    />
+                }
+                showsVerticalScrollIndicator={false}
+            />
+
+            {/* FAB */}
+            <TouchableOpacity
+                style={[styles.fab, { backgroundColor: colors.fab }]}
+                onPress={handleCreateMemo}
+                activeOpacity={0.8}
+            >
+                <Ionicons name="add" size={28} color={colors.fabText} />
+            </TouchableOpacity>
+        </View>
+    );
+}
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+    },
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginHorizontal: Spacing.lg,
+        marginTop: Spacing.md,
+        marginBottom: Spacing.sm,
+        paddingHorizontal: Spacing.lg,
+        paddingVertical: Spacing.md,
+        borderRadius: BorderRadius.full,
+        borderWidth: 1,
+        gap: Spacing.sm,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: FontSize.md,
+        padding: 0,
+    },
+    listContent: {
+        paddingHorizontal: Spacing.lg,
+        paddingBottom: 100,
+    },
+    listEmpty: {
+        flex: 1,
+    },
+    row: {
+        justifyContent: 'space-between',
+        marginBottom: CARD_MARGIN,
+    },
+    card: {
+        width: CARD_WIDTH,
+        padding: Spacing.md,
+        borderRadius: BorderRadius.lg,
+        minHeight: 100,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 1,
+        shadowRadius: 8,
+        elevation: 3,
+    },
+    pinBadge: {
+        position: 'absolute',
+        top: Spacing.sm,
+        right: Spacing.sm,
+    },
+    cardTitle: {
+        fontSize: FontSize.md,
+        fontWeight: '700',
+        marginBottom: Spacing.xs,
+        lineHeight: 22,
+    },
+    cardContent: {
+        fontSize: FontSize.sm,
+        lineHeight: 18,
+        marginBottom: Spacing.sm,
+    },
+    triggerBadges: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 4,
+        marginTop: 'auto' as any,
+    },
+    triggerBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: BorderRadius.sm,
+        gap: 3,
+    },
+    triggerBadgeText: {
+        fontSize: FontSize.xs,
+        fontWeight: '500',
+    },
+    emptyState: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingBottom: 80,
+    },
+    emptyTitle: {
+        fontSize: FontSize.lg,
+        fontWeight: '600',
+        marginTop: Spacing.lg,
+    },
+    emptySubtitle: {
+        fontSize: FontSize.sm,
+        marginTop: Spacing.sm,
+    },
+    fab: {
+        position: 'absolute',
+        right: Spacing.xl,
+        bottom: 30,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 8,
+        shadowColor: '#6C5CE7',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.35,
+        shadowRadius: 8,
+    },
+});
