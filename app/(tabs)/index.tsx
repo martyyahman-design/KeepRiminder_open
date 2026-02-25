@@ -7,6 +7,7 @@ import {
     StyleSheet,
     TextInput,
     RefreshControl,
+    ScrollView,
     Dimensions,
     Animated,
 } from 'react-native';
@@ -27,14 +28,31 @@ export default function MemoListScreen() {
     const colorScheme = useColorScheme();
     const [searchQuery, setSearchQuery] = useState('');
     const [refreshing, setRefreshing] = useState(false);
+    const [filterType, setFilterType] = useState<'all' | 'datetime' | 'timer' | 'location'>('all');
 
-    const filteredMemos = searchQuery.trim()
-        ? memos.filter(
-            m =>
+    const filteredMemos = memos
+        .filter(m => {
+            // Search filter
+            const matchesSearch = !searchQuery.trim() ||
                 m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                m.content.toLowerCase().includes(searchQuery.toLowerCase())
-        )
-        : memos;
+                m.content.toLowerCase().includes(searchQuery.toLowerCase());
+
+            if (!matchesSearch) return false;
+
+            // Trigger type filter
+            if (filterType === 'all') return true;
+            if (filterType === 'datetime') return m.triggers.some(t => t.type === 'datetime');
+            if (filterType === 'timer') return m.triggers.some(t => t.type === 'timer');
+            if (filterType === 'location') return m.triggers.some(t => t.type === 'location_enter' || t.type === 'location_exit');
+
+            return true;
+        })
+        .sort((a, b) => {
+            if (filterType === 'all') {
+                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            }
+            return 0; // Default sorting for other filters (could be customized)
+        });
 
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
@@ -164,6 +182,39 @@ export default function MemoListScreen() {
                 ) : null}
             </View>
 
+            {/* Filter Chips */}
+            <View style={styles.filterContainer}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+                    <TouchableOpacity
+                        style={[styles.filterChip, filterType === 'all' && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
+                        onPress={() => setFilterType('all')}
+                    >
+                        <Text style={[styles.filterText, { color: filterType === 'all' ? colors.primary : colors.textSecondary }]}>作成日時順</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.filterChip, filterType === 'datetime' && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
+                        onPress={() => setFilterType('datetime')}
+                    >
+                        <Ionicons name="calendar" size={14} color={filterType === 'datetime' ? colors.primary : colors.textSecondary} />
+                        <Text style={[styles.filterText, { color: filterType === 'datetime' ? colors.primary : colors.textSecondary }]}>日時</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.filterChip, filterType === 'timer' && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
+                        onPress={() => setFilterType('timer')}
+                    >
+                        <Ionicons name="timer" size={14} color={filterType === 'timer' ? colors.primary : colors.textSecondary} />
+                        <Text style={[styles.filterText, { color: filterType === 'timer' ? colors.primary : colors.textSecondary }]}>タイマー</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.filterChip, filterType === 'location' && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
+                        onPress={() => setFilterType('location')}
+                    >
+                        <Ionicons name="location" size={14} color={filterType === 'location' ? colors.primary : colors.textSecondary} />
+                        <Text style={[styles.filterText, { color: filterType === 'location' ? colors.primary : colors.textSecondary }]}>エリア</Text>
+                    </TouchableOpacity>
+                </ScrollView>
+            </View>
+
             {/* Memo Grid */}
             <FlatList
                 data={filteredMemos}
@@ -213,6 +264,27 @@ const styles = StyleSheet.create({
         borderRadius: BorderRadius.full,
         borderWidth: 1,
         gap: Spacing.sm,
+    },
+    filterContainer: {
+        marginBottom: Spacing.md,
+    },
+    filterScroll: {
+        paddingHorizontal: Spacing.lg,
+        gap: Spacing.sm,
+    },
+    filterChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: Spacing.md,
+        paddingVertical: 6,
+        borderRadius: BorderRadius.full,
+        borderWidth: 1,
+        borderColor: 'rgba(128, 128, 128, 0.2)',
+        gap: 6,
+    },
+    filterText: {
+        fontSize: FontSize.sm,
+        fontWeight: '600',
     },
     searchInput: {
         flex: 1,

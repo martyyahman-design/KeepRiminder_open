@@ -20,12 +20,19 @@ export default function MapViewComponent({
             latitudeDelta: 0.02,
             longitudeDelta: 0.02,
         }
-        : {
-            latitude: 35.6812,
-            longitude: 139.7671,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
-        };
+        : locationTriggers.length > 0
+            ? {
+                latitude: locationTriggers[0].latitude,
+                longitude: locationTriggers[0].longitude,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+            }
+            : {
+                latitude: 35.6812,
+                longitude: 139.7671,
+                latitudeDelta: 0.05,
+                longitudeDelta: 0.05,
+            };
 
     return (
         <MapView

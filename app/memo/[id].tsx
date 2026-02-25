@@ -16,6 +16,7 @@ import { useMemos } from '../../src/contexts/MemoContext';
 import { useThemeColors, Spacing, FontSize, BorderRadius } from '../../src/theme';
 import { MemoColor, MEMO_COLORS, Trigger } from '../../src/types/models';
 import { useColorScheme } from 'react-native';
+import MapViewComponent from '../../src/components/MapViewComponent';
 
 export default function MemoEditScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -300,6 +301,25 @@ export default function MemoEditScreen() {
                         ))
                     )}
                 </View>
+
+                {/* Map Section for Location Triggers */}
+                {memo.triggers.some(t => t.type === 'location_enter' || t.type === 'location_exit') && (
+                    <View style={styles.mapSection}>
+                        <Text style={[styles.sectionTitle, { color: colorScheme === 'dark' ? '#D1D5DB' : '#374151' }]}>
+                            エリア確認
+                        </Text>
+                        <View style={[styles.mapContainer, { borderColor: colors.border }]}>
+                            <MapViewComponent
+                                location={null} // Will use the first trigger's location as center implicitly via MapViewComponent's logic if we adjust it, or we pass it
+                                locationTriggers={memo.triggers
+                                    .filter(t => (t.type === 'location_enter' || t.type === 'location_exit') && t.latitude !== undefined)
+                                    .map(t => ({ ...t, memoTitle: memo.title, memoId: memo.id }))
+                                }
+                                onMarkerCalloutPress={() => { }}
+                            />
+                        </View>
+                    </View>
+                )}
             </ScrollView>
         </KeyboardAvoidingView>
     );
@@ -425,5 +445,20 @@ const styles = StyleSheet.create({
     },
     triggerActionText: {
         fontSize: FontSize.xs,
+    },
+    mapSection: {
+        marginTop: Spacing.xl,
+        marginBottom: Spacing.xxl,
+    },
+    sectionTitle: {
+        fontSize: FontSize.lg,
+        fontWeight: '700',
+        marginBottom: Spacing.md,
+    },
+    mapContainer: {
+        height: 200,
+        borderRadius: BorderRadius.md,
+        overflow: 'hidden',
+        borderWidth: 1,
     },
 });

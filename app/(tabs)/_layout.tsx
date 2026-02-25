@@ -12,14 +12,7 @@ export default function TabLayout() {
                 tabBarActiveTintColor: colors.tabBarActive,
                 tabBarInactiveTintColor: colors.tabBarInactive,
                 tabBarStyle: {
-                    backgroundColor: colors.tabBar,
-                    borderTopColor: colors.tabBarBorder,
-                    borderTopWidth: 0.5,
-                    elevation: 0,
-                    shadowOpacity: 0,
-                    height: 85,
-                    paddingBottom: 25,
-                    paddingTop: 8,
+                    display: 'none',
                 },
                 tabBarLabelStyle: {
                     fontSize: 11,
@@ -40,15 +33,6 @@ export default function TabLayout() {
                     title: 'メモ',
                     tabBarIcon: ({ color, size }) => (
                         <Ionicons name="documents" size={size} color={color} />
-                    ),
-                }}
-            />
-            <Tabs.Screen
-                name="map"
-                options={{
-                    title: 'マップ',
-                    tabBarIcon: ({ color, size }) => (
-                        <Ionicons name="map" size={size} color={color} />
                     ),
                 }}
             />
