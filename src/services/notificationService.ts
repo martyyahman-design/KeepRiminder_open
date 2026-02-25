@@ -14,6 +14,8 @@ Notifications.setNotificationHandler({
 });
 
 export async function requestNotificationPermissions(): Promise<boolean> {
+    if (Platform.OS === 'web') return true;
+
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
 
@@ -52,6 +54,11 @@ export async function sendNotification(
     trigger: Trigger,
     body?: string
 ): Promise<string> {
+    if (Platform.OS === 'web') {
+        console.log('Web Notification:', memo.title, body || memo.content);
+        return 'web-notification-id';
+    }
+
     const notificationId = await Notifications.scheduleNotificationAsync({
         content: {
             title: memo.title || 'KeepReminder',
@@ -73,6 +80,11 @@ export async function scheduleNotificationAt(
     trigger: Trigger,
     date: Date
 ): Promise<string> {
+    if (Platform.OS === 'web') {
+        console.log('Web Scheduled Notification at', date, memo.title);
+        return 'web-notification-id';
+    }
+
     const notificationId = await Notifications.scheduleNotificationAsync({
         content: {
             title: memo.title || 'KeepReminder',
@@ -93,10 +105,12 @@ export async function scheduleNotificationAt(
 }
 
 export async function cancelNotification(notificationId: string): Promise<void> {
+    if (Platform.OS === 'web') return;
     await Notifications.cancelScheduledNotificationAsync(notificationId);
 }
 
 export async function cancelAllNotifications(): Promise<void> {
+    if (Platform.OS === 'web') return;
     await Notifications.cancelAllScheduledNotificationsAsync();
 }
 

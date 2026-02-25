@@ -64,7 +64,12 @@ export default function TriggerEditScreen() {
     };
 
     const handleSave = async () => {
-        if (!memoId) return;
+        console.log('handleSave called with memoId:', memoId);
+        if (!memoId) {
+            console.error('memoId is missing in handleSave');
+            Alert.alert('エラー', 'メモIDが見つかりません');
+            return;
+        }
 
         try {
             let trigger;
@@ -132,8 +137,25 @@ export default function TriggerEditScreen() {
                 }
             }
 
-            router.back();
+            console.log('Trigger saved successfully, navigating back...');
+
+            // On web, showAlert might be block, but on native it's async
+            if (Platform.OS === 'web') {
+                console.log('Web: Navigating to', `/memo/${memoId}`);
+                router.replace(`/memo/${memoId}`);
+            } else {
+                Alert.alert('成功', 'トリガーを保存しました', [
+                    {
+                        text: 'OK',
+                        onPress: () => {
+                            console.log('Native: Navigating to', `/memo/${memoId}`);
+                            router.replace(`/memo/${memoId}`);
+                        }
+                    }
+                ]);
+            }
         } catch (err: any) {
+            console.error('Error saving trigger:', err);
             Alert.alert('エラー', err.message || 'トリガーの作成に失敗しました');
         }
     };
@@ -396,6 +418,7 @@ export default function TriggerEditScreen() {
             <TouchableOpacity
                 style={[styles.saveBtn, { backgroundColor: colors.primary }]}
                 onPress={handleSave}
+                activeOpacity={0.7}
             >
                 <Ionicons name="checkmark" size={22} color="#FFFFFF" />
                 <Text style={styles.saveBtnText}>トリガーを保存</Text>
