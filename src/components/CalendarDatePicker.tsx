@@ -8,7 +8,7 @@ import {
     Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useThemeColors, Spacing, FontSize, BorderRadius } from '../theme';
+import { useThemeColors, Spacing, FontSize, BorderRadius, getCardShadow } from '../theme';
 
 interface CalendarDatePickerProps {
     visible: boolean;
@@ -105,7 +105,7 @@ export const CalendarDatePicker: React.FC<CalendarDatePickerProps> = ({
         >
             <View style={styles.centeredView}>
                 <Pressable style={styles.overlay} onPress={onClose} />
-                <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+                <View style={[styles.modalContent, { backgroundColor: colors.surface, ...getCardShadow(colors) }]}>
                     <View style={styles.header}>
                         <TouchableOpacity onPress={prevMonth} style={styles.navBtn}>
                             <Ionicons name="chevron-back" size={24} color={colors.text} />
@@ -156,11 +156,6 @@ const styles = StyleSheet.create({
         maxWidth: 340,
         borderRadius: BorderRadius.lg,
         padding: Spacing.lg,
-        elevation: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 5 },
-        shadowOpacity: 0.3,
-        shadowRadius: 10,
     },
     header: {
         flexDirection: 'row',

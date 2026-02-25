@@ -59,6 +59,16 @@ export interface Trigger {
     updatedAt: string;
 }
 
+export interface LocationPreset {
+    id: string;
+    name: string;
+    latitude: number;
+    longitude: number;
+    radius: number;
+    createdAt: string;
+    updatedAt: string;
+}
+
 export interface MemoWithTriggers extends Memo {
     triggers: Trigger[];
 }

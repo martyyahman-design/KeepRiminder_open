@@ -10,11 +10,13 @@ import {
     ScrollView,
     Dimensions,
     Animated,
+    Pressable,
+    GestureResponderEvent,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useMemos } from '../../src/contexts/MemoContext';
-import { useThemeColors, Spacing, FontSize, BorderRadius } from '../../src/theme';
+import { useThemeColors, Spacing, FontSize, BorderRadius, getCardShadow } from '../../src/theme';
 import { MemoWithTriggers, MEMO_COLORS, MemoColor } from '../../src/types/models';
 import { CountdownText } from '../../src/components/CountdownText';
 import { useColorScheme } from 'react-native';
@@ -106,7 +108,7 @@ export default function MemoListScreen() {
                     backgroundColor: getCardColor(item.color),
                     borderColor: item.color === 'default' ? colors.border : 'transparent',
                     borderWidth: item.color === 'default' ? 1 : 0,
-                    shadowColor: colors.cardShadow,
+                    ...getCardShadow(colors),
                 },
             ]}
             onPress={() => router.push(`/memo/${item.id}`)}
@@ -120,21 +122,22 @@ export default function MemoListScreen() {
             {item.title ? (
                 <View style={styles.cardHeader}>
                     {item.todoType !== 'none' && (
-                        <TouchableOpacity
-                            onPress={(e) => {
+                        <Pressable
+                            onPress={(e: GestureResponderEvent) => {
                                 e.stopPropagation();
                                 const isCompleted = !item.isCompleted;
                                 const completedAt = isCompleted ? new Date().toISOString() : null;
                                 updateMemo(item.id, { isCompleted, completedAt });
                             }}
                             style={styles.checkbox}
+                            hitSlop={8}
                         >
                             <Ionicons
                                 name={item.isCompleted ? "checkbox" : "square-outline"}
                                 size={20}
                                 color={item.isCompleted ? colors.primary : colors.textTertiary}
                             />
-                        </TouchableOpacity>
+                        </Pressable>
                     )}
                     <Text
                         style={[
@@ -292,12 +295,18 @@ export default function MemoListScreen() {
                         {todayMemos.map(m => (
                             <TouchableOpacity
                                 key={m.id}
-                                style={[styles.todayItem, { backgroundColor: getCardColor(m.color) }]}
+                                style={[styles.todayItem, { backgroundColor: getCardColor(m.color), ...getCardShadow(colors) }]}
                                 onPress={() => router.push(`/memo/${m.id}`)}
                             >
-                                <TouchableOpacity onPress={() => handleToggleTodo(m)}>
+                                <Pressable
+                                    onPress={(e: GestureResponderEvent) => {
+                                        e.stopPropagation();
+                                        handleToggleTodo(m);
+                                    }}
+                                    hitSlop={8}
+                                >
                                     <Ionicons name="ellipse-outline" size={24} color={colors.primary} />
-                                </TouchableOpacity>
+                                </Pressable>
                                 <Text style={[styles.todayItemText, { color: colors.text }]}>{m.title || '(無題)'}</Text>
                             </TouchableOpacity>
                         ))}
@@ -316,7 +325,7 @@ export default function MemoListScreen() {
 
             {/* FAB */}
             <TouchableOpacity
-                style={[styles.fab, { backgroundColor: colors.fab }]}
+                style={[styles.fab, { backgroundColor: colors.fab, ...getCardShadow(colors) }]}
                 onPress={handleCreateMemo}
                 activeOpacity={0.8}
             >
@@ -384,10 +393,6 @@ const styles = StyleSheet.create({
         padding: Spacing.md,
         borderRadius: BorderRadius.lg,
         minHeight: 100,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 1,
-        shadowRadius: 8,
-        elevation: 3,
     },
     pinBadge: {
         position: 'absolute',
@@ -460,11 +465,6 @@ const styles = StyleSheet.create({
         borderRadius: 28,
         justifyContent: 'center',
         alignItems: 'center',
-        elevation: 8,
-        shadowColor: '#6C5CE7',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.35,
-        shadowRadius: 8,
     },
     todaySection: {
         marginBottom: Spacing.xl,
@@ -482,11 +482,6 @@ const styles = StyleSheet.create({
         borderRadius: BorderRadius.md,
         marginBottom: Spacing.sm,
         gap: Spacing.md,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
     },
     todayItemText: {
         fontSize: FontSize.md,

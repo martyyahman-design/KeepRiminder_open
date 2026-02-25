@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -12,14 +12,22 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useThemeColors, Spacing, FontSize, BorderRadius } from '../../src/theme';
+import { useThemeColors, Spacing, FontSize, BorderRadius, getCardShadow } from '../../src/theme';
 import { useMemos } from '../../src/contexts/MemoContext';
 import { CalendarDatePicker } from '../../src/components/CalendarDatePicker';
 import { TimePicker } from '../../src/components/TimePicker';
 import { TriggerType, ActionType } from '../../src/types/models';
-import { registerGeofence } from '../../src/services/geofencingService';
-import { scheduleDatetimeTrigger, startTimerTrigger } from '../../src/services/schedulerService';
 import { getCurrentLocation } from '../../src/services/geofencingService';
+import { MapPicker } from '../../src/components/MapPicker';
+import { LocationPresetPicker } from '../../src/components/LocationPresetPicker';
+import { LocationPreset } from '../../src/types/models';
+import {
+    getAllLocationPresets,
+    createLocationPreset,
+    deleteLocationPreset
+} from '../../src/database/repositories/locationRepository';
+import { scheduleDatetimeTrigger, startTimerTrigger } from '../../src/services/schedulerService';
+import { registerGeofence } from '../../src/services/geofencingService';
 
 const TRIGGER_TYPES: { type: TriggerType; icon: string; label: string; desc: string }[] = [
     { type: 'timer', icon: 'timer', label: 'タイマー', desc: '設定時間後に発火' },
@@ -59,10 +67,42 @@ export default function TriggerEditScreen() {
     });
 
     // Location state
+    const [isMapVisible, setMapVisible] = useState(false);
+    const [isPresetPickerVisible, setPresetPickerVisible] = useState(false);
+    const [presets, setPresets] = useState<LocationPreset[]>([]);
     const [locationName, setLocationName] = useState('');
     const [latitude, setLatitude] = useState('');
     const [longitude, setLongitude] = useState('');
     const [radius, setRadius] = useState('200');
+
+    useEffect(() => {
+        loadPresets();
+    }, []);
+
+    const loadPresets = async () => {
+        const data = await getAllLocationPresets();
+        setPresets(data);
+    };
+
+    const handleSavePreset = async () => {
+        if (!locationName || !latitude || !longitude) {
+            Alert.alert('エラー', '場所の名前と位置情報を設定してください');
+            return;
+        }
+        await createLocationPreset({
+            name: locationName,
+            latitude: parseFloat(latitude),
+            longitude: parseFloat(longitude),
+            radius: parseFloat(radius) || 200,
+        });
+        Alert.alert('完了', 'プリセットを保存しました');
+        loadPresets();
+    };
+
+    const handleDeletePreset = async (id: string) => {
+        await deleteLocationPreset(id);
+        loadPresets();
+    };
 
     const handleUseCurrentLocation = async () => {
         const location = await getCurrentLocation();
@@ -365,6 +405,16 @@ export default function TriggerEditScreen() {
 
             {(selectedType === 'location_enter' || selectedType === 'location_exit') && (
                 <View style={[styles.settingsCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={styles.presetActions}>
+                        <TouchableOpacity
+                            style={[styles.presetBtn, { backgroundColor: `${colors.primary}10`, borderColor: colors.primary }]}
+                            onPress={() => setPresetPickerVisible(true)}
+                        >
+                            <Ionicons name="bookmark-outline" size={18} color={colors.primary} />
+                            <Text style={[styles.presetBtnText, { color: colors.primary }]}>プリセットから選択</Text>
+                        </TouchableOpacity>
+                    </View>
+
                     <TextInput
                         style={[styles.locationNameInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceElevated }]}
                         value={locationName}
@@ -373,50 +423,64 @@ export default function TriggerEditScreen() {
                         placeholderTextColor={colors.textTertiary}
                     />
 
+                    <View style={styles.mapActionRow}>
+                        <TouchableOpacity
+                            style={[styles.mapTriggerBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
+                            onPress={() => setMapVisible(true)}
+                        >
+                            <Ionicons name="map-outline" size={20} color={colors.primary} />
+                            <Text style={[styles.mapTriggerText, { color: colors.text }]}>地図で場所・範囲を指定</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.coordInfoRow}>
+                        <View style={styles.coordInfoItem}>
+                            <Text style={[styles.coordInfoLabel, { color: colors.textTertiary }]}>緯度/経度</Text>
+                            <Text style={[styles.coordInfoValue, { color: colors.textSecondary }]}>
+                                {latitude ? `${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)}` : '未設定'}
+                            </Text>
+                        </View>
+                        <View style={styles.coordInfoItem}>
+                            <Text style={[styles.coordInfoLabel, { color: colors.textTertiary }]}>半径</Text>
+                            <Text style={[styles.coordInfoValue, { color: colors.textSecondary }]}>{radius}m</Text>
+                        </View>
+                    </View>
+
                     <TouchableOpacity
-                        style={[styles.currentLocBtn, { backgroundColor: `${colors.primary}15` }]}
-                        onPress={handleUseCurrentLocation}
+                        style={[styles.savePresetInlineBtn, { opacity: (locationName && latitude) ? 1 : 0.5 }]}
+                        onPress={handleSavePreset}
+                        disabled={!locationName || !latitude}
                     >
-                        <Ionicons name="locate" size={18} color={colors.primary} />
-                        <Text style={[styles.currentLocText, { color: colors.primary }]}>現在地を使用</Text>
+                        <Text style={[styles.savePresetInlineText, { color: colors.primary }]}>この場所をプリセットに保存</Text>
                     </TouchableOpacity>
 
-                    <View style={styles.coordRow}>
-                        <View style={styles.coordInput}>
-                            <Text style={[styles.coordLabel, { color: colors.textSecondary }]}>緯度</Text>
-                            <TextInput
-                                style={[styles.coordField, { color: colors.text, backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
-                                value={latitude}
-                                onChangeText={setLatitude}
-                                keyboardType="decimal-pad"
-                                placeholder="35.6812"
-                                placeholderTextColor={colors.textTertiary}
-                            />
-                        </View>
-                        <View style={styles.coordInput}>
-                            <Text style={[styles.coordLabel, { color: colors.textSecondary }]}>経度</Text>
-                            <TextInput
-                                style={[styles.coordField, { color: colors.text, backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
-                                value={longitude}
-                                onChangeText={setLongitude}
-                                keyboardType="decimal-pad"
-                                placeholder="139.7671"
-                                placeholderTextColor={colors.textTertiary}
-                            />
-                        </View>
-                    </View>
+                    <MapPicker
+                        visible={isMapVisible}
+                        onClose={() => setMapVisible(false)}
+                        initialLocation={latitude ? {
+                            latitude: parseFloat(latitude),
+                            longitude: parseFloat(longitude),
+                            radius: parseInt(radius)
+                        } : undefined}
+                        onSelect={(loc) => {
+                            setLatitude(loc.latitude.toString());
+                            setLongitude(loc.longitude.toString());
+                            setRadius(loc.radius.toString());
+                        }}
+                    />
 
-                    <View style={styles.radiusRow}>
-                        <Text style={[styles.coordLabel, { color: colors.textSecondary }]}>半径 (m)</Text>
-                        <TextInput
-                            style={[styles.radiusField, { color: colors.text, backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
-                            value={radius}
-                            onChangeText={setRadius}
-                            keyboardType="number-pad"
-                            placeholder="200"
-                            placeholderTextColor={colors.textTertiary}
-                        />
-                    </View>
+                    <LocationPresetPicker
+                        visible={isPresetPickerVisible}
+                        onClose={() => setPresetPickerVisible(false)}
+                        presets={presets}
+                        onDelete={handleDeletePreset}
+                        onSelect={(p) => {
+                            setLocationName(p.name);
+                            setLatitude(p.latitude.toString());
+                            setLongitude(p.longitude.toString());
+                            setRadius(p.radius.toString());
+                        }}
+                    />
                 </View>
             )}
 
@@ -482,7 +546,7 @@ export default function TriggerEditScreen() {
 
             {/* Save Button */}
             <TouchableOpacity
-                style={[styles.saveBtn, { backgroundColor: colors.primary }]}
+                style={[styles.saveBtn, { backgroundColor: colors.primary, ...getCardShadow(colors) }]}
                 onPress={handleSave}
                 activeOpacity={0.7}
             >
@@ -686,11 +750,6 @@ const styles = StyleSheet.create({
         borderRadius: BorderRadius.lg,
         marginTop: Spacing.xxxl,
         gap: Spacing.sm,
-        elevation: 4,
-        shadowColor: '#6C5CE7',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
     },
     saveBtnText: {
         color: '#FFFFFF',
@@ -708,5 +767,66 @@ const styles = StyleSheet.create({
     pickerTriggerText: {
         fontSize: FontSize.lg,
         fontWeight: '500',
+    },
+    presetActions: {
+        flexDirection: 'row',
+        marginBottom: Spacing.md,
+    },
+    presetBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: Spacing.xs,
+        paddingHorizontal: Spacing.sm,
+        borderRadius: BorderRadius.sm,
+        borderWidth: 1,
+        gap: Spacing.xs,
+    },
+    presetBtnText: {
+        fontSize: FontSize.xs,
+        fontWeight: '600',
+    },
+    mapActionRow: {
+        marginTop: Spacing.md,
+    },
+    mapTriggerBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: Spacing.md,
+        borderRadius: BorderRadius.md,
+        borderWidth: 1.5,
+        gap: Spacing.md,
+    },
+    mapTriggerText: {
+        fontSize: FontSize.md,
+        fontWeight: '600',
+    },
+    coordInfoRow: {
+        flexDirection: 'row',
+        marginTop: Spacing.md,
+        gap: Spacing.lg,
+        paddingHorizontal: Spacing.xs,
+    },
+    coordInfoItem: {
+        flex: 1,
+    },
+    coordInfoLabel: {
+        fontSize: 10,
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        marginBottom: 2,
+    },
+    coordInfoValue: {
+        fontSize: FontSize.sm,
+        fontWeight: '500',
+    },
+    savePresetInlineBtn: {
+        marginTop: Spacing.lg,
+        alignSelf: 'center',
+        paddingVertical: Spacing.xs,
+    },
+    savePresetInlineText: {
+        fontSize: FontSize.sm,
+        fontWeight: '600',
+        textDecorationLine: 'underline',
     },
 });

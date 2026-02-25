@@ -9,11 +9,13 @@ import {
     Alert,
     KeyboardAvoidingView,
     Platform,
+    Pressable,
+    GestureResponderEvent,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useMemos } from '../../src/contexts/MemoContext';
-import { useThemeColors, Spacing, FontSize, BorderRadius } from '../../src/theme';
+import { useThemeColors, Spacing, FontSize, BorderRadius, getCardShadow } from '../../src/theme';
 import { MemoColor, MEMO_COLORS, Trigger } from '../../src/types/models';
 import { useColorScheme } from 'react-native';
 import MapViewComponent from '../../src/components/MapViewComponent';
@@ -350,9 +352,15 @@ export default function MemoEditScreen() {
                                         </View>
                                     </View>
                                 </View>
-                                <TouchableOpacity onPress={() => handleDeleteTrigger(trigger.id)}>
+                                <Pressable
+                                    onPress={(e: GestureResponderEvent) => {
+                                        e.stopPropagation();
+                                        handleDeleteTrigger(trigger.id);
+                                    }}
+                                    hitSlop={8}
+                                >
                                     <Ionicons name="close-circle" size={22} color={colors.textTertiary} />
-                                </TouchableOpacity>
+                                </Pressable>
                             </View>
                         ))
                     )}

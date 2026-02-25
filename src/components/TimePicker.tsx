@@ -8,7 +8,7 @@ import {
     Pressable,
     ScrollView,
 } from 'react-native';
-import { useThemeColors, Spacing, FontSize, BorderRadius } from '../theme';
+import { useThemeColors, Spacing, FontSize, BorderRadius, getCardShadow } from '../theme';
 
 interface TimePickerProps {
     visible: boolean;
@@ -103,7 +103,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
         >
             <View style={styles.centeredView}>
                 <Pressable style={styles.overlay} onPress={onClose} />
-                <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+                <View style={[styles.modalContent, { backgroundColor: colors.surface, ...getCardShadow(colors) }]}>
                     <Text style={[styles.modalTitle, { color: colors.text }]}>
                         {mode === 'time' ? '時刻を選択' : '時間を設定'}
                     </Text>
@@ -146,11 +146,6 @@ const styles = StyleSheet.create({
         maxWidth: 400,
         borderRadius: BorderRadius.lg,
         padding: Spacing.xl,
-        elevation: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 5 },
-        shadowOpacity: 0.3,
-        shadowRadius: 10,
     },
     modalTitle: {
         fontSize: FontSize.lg,
@@ -201,7 +196,6 @@ const styles = StyleSheet.create({
         borderRadius: BorderRadius.md,
     },
     confirmBtn: {
-        elevation: 2,
     },
     btnText: {
         fontSize: FontSize.md,

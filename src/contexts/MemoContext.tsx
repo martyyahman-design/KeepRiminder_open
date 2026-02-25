@@ -66,13 +66,13 @@ export function MemoProvider({ children }: { children: ReactNode }) {
 
     const updateMemoHandler = useCallback(async (id: string, updates: Partial<Memo>) => {
         await MemoRepo.updateMemo(id, updates);
-        await refreshMemos();
-    }, [refreshMemos]);
+        setMemos(prev => prev.map(m => m.id === id ? { ...m, ...updates, updatedAt: new Date().toISOString() } : m));
+    }, []);
 
     const deleteMemoHandler = useCallback(async (id: string) => {
         await MemoRepo.deleteMemo(id);
-        await refreshMemos();
-    }, [refreshMemos]);
+        setMemos(prev => prev.filter(m => m.id !== id));
+    }, []);
 
     const searchMemosHandler = useCallback(async (query: string): Promise<MemoWithTriggers[]> => {
         if (!query.trim()) {
@@ -96,13 +96,20 @@ export function MemoProvider({ children }: { children: ReactNode }) {
 
     const updateTriggerHandler = useCallback(async (id: string, updates: any) => {
         await TriggerRepo.updateTrigger(id, updates);
-        await refreshMemos();
-    }, [refreshMemos]);
+        // トリガー更新時も必要最小限の更新に留める
+        setMemos(prev => prev.map(memo => ({
+            ...memo,
+            triggers: memo.triggers.map(t => t.id === id ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t)
+        })));
+    }, []);
 
     const deleteTriggerHandler = useCallback(async (id: string) => {
         await TriggerRepo.deleteTrigger(id);
-        await refreshMemos();
-    }, [refreshMemos]);
+        setMemos(prev => prev.map(memo => ({
+            ...memo,
+            triggers: memo.triggers.filter(t => t.id !== id)
+        })));
+    }, []);
 
     return (
         <MemoContext.Provider

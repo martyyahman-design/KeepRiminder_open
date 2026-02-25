@@ -1,6 +1,16 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
-import MapView, { Marker, Circle } from 'react-native-maps';
+import { StyleSheet, View, Platform } from 'react-native';
+
+let MapView: any;
+let Marker: any;
+let Circle: any;
+
+if (Platform.OS !== 'web') {
+    const Maps = require('react-native-maps');
+    MapView = Maps.default;
+    Marker = Maps.Marker;
+    Circle = Maps.Circle;
+}
 
 interface MapViewComponentProps {
     location: { latitude: number; longitude: number } | null;

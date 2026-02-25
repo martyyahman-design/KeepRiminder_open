@@ -20,6 +20,65 @@ function getInMemoryDB(): InMemoryDB {
   return inMemoryDB;
 }
 
+// SQLite database (native only)
+let db: any = null;
+
+async function initSQLite(): Promise<any> {
+  const SQLite = require('expo-sqlite');
+  const database = await SQLite.openDatabaseAsync('keepreminder.db');
+  await database.execAsync(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA foreign_keys = ON;
+
+    CREATE TABLE IF NOT EXISTS memos (
+      id TEXT PRIMARY KEY NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL DEFAULT '',
+      color TEXT NOT NULL DEFAULT 'default',
+      isPinned INTEGER NOT NULL DEFAULT 0,
+      todoType TEXT NOT NULL DEFAULT 'none',
+      todoDate TEXT,
+      isCompleted INTEGER NOT NULL DEFAULT 0,
+      completedAt TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS triggers (
+      id TEXT PRIMARY KEY NOT NULL,
+      memoId TEXT NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('datetime', 'timer', 'location_enter', 'location_exit')),
+      isActive INTEGER NOT NULL DEFAULT 1,
+      scheduledAt TEXT,
+      durationSeconds INTEGER,
+      startedAt TEXT,
+      latitude REAL,
+      longitude REAL,
+      radius REAL,
+      locationName TEXT,
+      actionType TEXT NOT NULL DEFAULT 'notification' CHECK(actionType IN ('notification', 'alarm')),
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      FOREIGN KEY (memoId) REFERENCES memos(id) ON DELETE CASCADE
+    );
+    
+    CREATE TABLE IF NOT EXISTS location_presets (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      latitude REAL NOT NULL,
+      longitude REAL NOT NULL,
+      radius REAL NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_triggers_memoId ON triggers(memoId);
+    CREATE INDEX IF NOT EXISTS idx_triggers_type ON triggers(type);
+    CREATE INDEX IF NOT EXISTS idx_triggers_isActive ON triggers(isActive);
+  `);
+  return database;
+}
+
 export interface DatabaseAdapter {
   runAsync(sql: string, params?: any[]): Promise<any>;
   getFirstAsync<T = any>(sql: string, params?: any[]): Promise<T | null>;
@@ -48,11 +107,13 @@ class InMemoryAdapter implements DatabaseAdapter {
         latitude, longitude, radius, locationName, actionType, createdAt, updatedAt,
       });
     } else if (sqlLower.startsWith('update memos')) {
+      // Simple update - find and update by id (last param)
       const id = params?.[params.length - 1];
       const existing = this.db.memos.get(id);
       if (existing) {
+        // Extract SET clause fields from params
         const setMatch = sql.match(/SET\s+(.+?)\s+WHERE/i);
-        if (setMatch && setMatch[1]) {
+        if (setMatch) {
           const fields = setMatch[1].split(',').map(f => f.trim().split('=')[0].trim());
           let paramIdx = 0;
           for (const field of fields) {
@@ -69,7 +130,7 @@ class InMemoryAdapter implements DatabaseAdapter {
       const existing = this.db.triggers.get(id);
       if (existing) {
         const setMatch = sql.match(/SET\s+(.+?)\s+WHERE/i);
-        if (setMatch && setMatch[1]) {
+        if (setMatch) {
           const fields = setMatch[1].split(',').map(f => f.trim().split('=')[0].trim());
           let paramIdx = 0;
           for (const field of fields) {
@@ -83,7 +144,9 @@ class InMemoryAdapter implements DatabaseAdapter {
       }
     } else if (sqlLower.startsWith('delete from memos')) {
       const id = params?.[0];
+      console.log('InMemoryDB: Deleting memo', id);
       this.db.memos.delete(id);
+      // Delete associated triggers
       const triggersToDelete: string[] = [];
       for (const [tid, trigger] of this.db.triggers) {
         if (trigger.memoId === id) triggersToDelete.push(tid);
@@ -92,6 +155,7 @@ class InMemoryAdapter implements DatabaseAdapter {
     } else if (sqlLower.startsWith('delete from triggers')) {
       if (sqlLower.includes('memoid')) {
         const memoId = params?.[0];
+        console.log('InMemoryDB: Deleting all triggers for memo', memoId);
         const triggersToDelete: string[] = [];
         for (const [tid, trigger] of this.db.triggers) {
           if (trigger.memoId === memoId) triggersToDelete.push(tid);
@@ -99,6 +163,7 @@ class InMemoryAdapter implements DatabaseAdapter {
         triggersToDelete.forEach(tid => this.db.triggers.delete(tid));
       } else {
         const id = params?.[0];
+        console.log('InMemoryDB: Deleting trigger', id);
         this.db.triggers.delete(id);
       }
     } else if (sqlLower.startsWith('insert into location_presets')) {
@@ -121,6 +186,8 @@ class InMemoryAdapter implements DatabaseAdapter {
 
     if (sqlLower.includes('from memos')) {
       let results = Array.from(this.db.memos.values());
+
+      // Handle WHERE clause
       if (sqlLower.includes('where id =')) {
         results = results.filter(m => m.id === params?.[0]);
       } else if (sqlLower.includes('where title like')) {
@@ -130,17 +197,21 @@ class InMemoryAdapter implements DatabaseAdapter {
           m.content?.toLowerCase().includes(query.toLowerCase())
         );
       }
+
+      // Handle ORDER BY
       if (sqlLower.includes('order by')) {
         results.sort((a, b) => {
           if (a.isPinned !== b.isPinned) return (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0);
           return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
         });
       }
+
       return results as T[];
     }
 
     if (sqlLower.includes('from triggers')) {
       let results = Array.from(this.db.triggers.values());
+
       if (sqlLower.includes('where id =') && !sqlLower.includes('memoid')) {
         results = results.filter(t => t.id === params?.[0]);
       } else if (sqlLower.includes('where memoid =')) {
@@ -150,6 +221,7 @@ class InMemoryAdapter implements DatabaseAdapter {
       } else if (sqlLower.includes('where isactive = 1')) {
         results = results.filter(t => t.isActive === 1);
       }
+
       return results as T[];
     }
 
@@ -160,7 +232,29 @@ class InMemoryAdapter implements DatabaseAdapter {
       }
       return results as T[];
     }
+
     return [];
+  }
+}
+
+// SQLite adapter for native
+class SQLiteAdapter implements DatabaseAdapter {
+  private database: any;
+
+  constructor(database: any) {
+    this.database = database;
+  }
+
+  async runAsync(sql: string, params?: any[]): Promise<any> {
+    return this.database.runAsync(sql, params || []);
+  }
+
+  async getFirstAsync<T = any>(sql: string, params?: any[]): Promise<T | null> {
+    return this.database.getFirstAsync(sql, params || []);
+  }
+
+  async getAllAsync<T = any>(sql: string, params?: any[]): Promise<T[]> {
+    return this.database.getAllAsync(sql, params || []);
   }
 }
 
@@ -168,10 +262,22 @@ let adapter: DatabaseAdapter | null = null;
 
 export async function getDatabase(): Promise<DatabaseAdapter> {
   if (adapter) return adapter;
-  adapter = new InMemoryAdapter();
+
+  if (Platform.OS === 'web') {
+    adapter = new InMemoryAdapter();
+  } else {
+    const sqliteDb = await initSQLite();
+    db = sqliteDb;
+    adapter = new SQLiteAdapter(sqliteDb);
+  }
+
   return adapter;
 }
 
 export async function closeDatabase(): Promise<void> {
+  if (db && Platform.OS !== 'web') {
+    await db.closeAsync();
+    db = null;
+  }
   adapter = null;
 }

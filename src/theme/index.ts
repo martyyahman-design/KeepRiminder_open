@@ -1,4 +1,4 @@
-import { useColorScheme } from 'react-native';
+import { useColorScheme, Platform } from 'react-native';
 
 export const Colors = {
     light: {
@@ -59,7 +59,34 @@ export const Colors = {
     },
 };
 
-export type ThemeColors = typeof Colors.light;
+export interface ThemeColors {
+    primary: string;
+    primaryLight: string;
+    primaryDark: string;
+    secondary: string;
+    accent: string;
+    background: string;
+    surface: string;
+    surfaceElevated: string;
+    text: string;
+    textSecondary: string;
+    textTertiary: string;
+    border: string;
+    borderLight: string;
+    success: string;
+    warning: string;
+    error: string;
+    shadow: string;
+    overlay: string;
+    fab: string;
+    fabText: string;
+    tabBar: string;
+    tabBarBorder: string;
+    tabBarActive: string;
+    tabBarInactive: string;
+    statusBar: 'light' | 'dark';
+    cardShadow: string;
+}
 
 export function useThemeColors(): ThemeColors {
     const scheme = useColorScheme();
@@ -94,3 +121,18 @@ export const BorderRadius = {
     xl: 20,
     full: 999,
 };
+
+export function getCardShadow(colors: ThemeColors) {
+    if (Platform.OS === 'web') {
+        return {
+            boxShadow: `0 2px 8px ${colors.cardShadow}`,
+        };
+    }
+    return {
+        shadowColor: colors.cardShadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 1,
+        shadowRadius: 8,
+        elevation: 3,
+    };
+}

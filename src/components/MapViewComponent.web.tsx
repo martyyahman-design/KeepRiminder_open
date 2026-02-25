@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View, Text, Ionicons } from 'react-native';
+import { StyleSheet, View, Text } from 'react-native';
 // Note: No react-native-maps import here for web compatibility
 
 interface MapViewComponentProps {

@@ -9,12 +9,13 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { stopAlarm, getAlarmState, addAlarmListener } from '../src/services/alarmService';
-import { Spacing, FontSize, BorderRadius } from '../src/theme';
+import { Spacing, FontSize, BorderRadius, useThemeColors, getCardShadow } from '../src/theme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function AlarmScreen() {
     const alarmState = getAlarmState();
+    const colors = useThemeColors();
 
     useEffect(() => {
         const unsubscribe = addAlarmListener((active) => {
@@ -89,7 +90,7 @@ export default function AlarmScreen() {
 
                 {/* Stop Button */}
                 <TouchableOpacity
-                    style={styles.stopButton}
+                    style={[styles.stopButton, { ...getCardShadow(colors) }]}
                     onPress={handleStop}
                     activeOpacity={0.7}
                 >
@@ -164,11 +165,6 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         marginTop: Spacing.xxl,
-        elevation: 12,
-        shadowColor: '#FF6B6B',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.5,
-        shadowRadius: 16,
     },
     stopButtonText: {
         fontSize: FontSize.xxl,
