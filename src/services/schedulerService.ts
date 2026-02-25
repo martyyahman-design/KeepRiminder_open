@@ -79,6 +79,48 @@ async function fireTrigger(memo: Memo, trigger: Trigger): Promise<void> {
     }
 }
 
+export async function snoozeTrigger(triggerId: string, minutes: number): Promise<void> {
+    const trigger = await getActiveTriggersByType('timer').then(ts => ts.find(t => t.id === triggerId)) ||
+        await getActiveTriggersByType('datetime').then(ts => ts.find(t => t.id === triggerId)) ||
+        await getActiveTriggersByType('location_enter').then(ts => ts.find(t => t.id === triggerId)) ||
+        await getActiveTriggersByType('location_exit').then(ts => ts.find(t => t.id === triggerId));
+
+    if (!trigger) return;
+
+    // Stop current alarm
+    await require('./alarmService').stopAlarm();
+
+    const now = new Date();
+    const newTime = new Date(now.getTime() + minutes * 60 * 1000);
+
+    if (trigger.type === 'timer') {
+        const durationSeconds = minutes * 60;
+        await updateTrigger(triggerId, {
+            isActive: true,
+            startedAt: now.toISOString(),
+            durationSeconds: durationSeconds
+        });
+        const updatedTrigger = { ...trigger, isActive: true, startedAt: now.toISOString(), durationSeconds };
+        await startTimerTrigger(updatedTrigger);
+    } else if (trigger.type === 'datetime') {
+        const scheduledAt = newTime.toISOString();
+        await updateTrigger(triggerId, {
+            isActive: true,
+            scheduledAt
+        });
+        const updatedTrigger = { ...trigger, isActive: true, scheduledAt };
+        await scheduleDatetimeTrigger(updatedTrigger);
+    } else if (trigger.type.startsWith('location')) {
+        // Location triggers don't usually have snooze in minutes,
+        // but let's just reactivate it for now.
+        // If we want a time-based snooze for location, it's more complex.
+        // For now, let's just reactive it so it fires again when entering/exiting.
+        await updateTrigger(triggerId, { isActive: true });
+        const updatedTrigger = { ...trigger, isActive: true };
+        await require('./geofencingService').registerGeofence(updatedTrigger);
+    }
+}
+
 export function formatDuration(seconds: number): string {
     const hours = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);

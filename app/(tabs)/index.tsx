@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMemos } from '../../src/contexts/MemoContext';
 import { useThemeColors, Spacing, FontSize, BorderRadius } from '../../src/theme';
 import { MemoWithTriggers, MEMO_COLORS, MemoColor } from '../../src/types/models';
+import { CountdownText } from '../../src/components/CountdownText';
 import { useColorScheme } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -162,32 +163,40 @@ export default function MemoListScreen() {
             {item.triggers.length > 0 && (
                 <View style={styles.triggerBadges}>
                     {item.triggers.map(trigger => (
-                        <View
-                            key={trigger.id}
-                            style={[
-                                styles.triggerBadge,
-                                {
-                                    backgroundColor: trigger.isActive
-                                        ? `${colors.primary}20`
-                                        : `${colors.textTertiary}15`,
-                                },
-                            ]}
-                        >
-                            <Ionicons
-                                name={getTriggerIcon(trigger.type) as any}
-                                size={11}
-                                color={trigger.isActive ? colors.primary : colors.textTertiary}
-                            />
-                            <Text
+                        <View key={trigger.id} style={{ gap: 4 }}>
+                            <View
                                 style={[
-                                    styles.triggerBadgeText,
-                                    { color: trigger.isActive ? colors.primary : colors.textTertiary },
+                                    styles.triggerBadge,
+                                    {
+                                        backgroundColor: trigger.isActive
+                                            ? `${colors.primary}20`
+                                            : `${colors.textTertiary}15`,
+                                    },
                                 ]}
                             >
-                                {trigger.type === 'datetime' ? '日時' :
-                                    trigger.type === 'timer' ? 'タイマー' :
-                                        trigger.type === 'location_enter' ? '入場' : '退場'}
-                            </Text>
+                                <Ionicons
+                                    name={getTriggerIcon(trigger.type) as any}
+                                    size={11}
+                                    color={trigger.isActive ? colors.primary : colors.textTertiary}
+                                />
+                                <Text
+                                    style={[
+                                        styles.triggerBadgeText,
+                                        { color: trigger.isActive ? colors.primary : colors.textTertiary },
+                                    ]}
+                                >
+                                    {trigger.type === 'datetime' ? '日時' :
+                                        trigger.type === 'timer' ? 'タイマー' :
+                                            trigger.type === 'location_enter' ? '入場' : '退場'}
+                                </Text>
+                                {trigger.type === 'timer' && trigger.isActive && (
+                                    <CountdownText
+                                        trigger={trigger}
+                                        style={[styles.countdownText, { color: colors.primary }]}
+                                        hideIcon={true}
+                                    />
+                                )}
+                            </View>
                         </View>
                     ))}
                 </View>
@@ -483,5 +492,10 @@ const styles = StyleSheet.create({
         fontSize: FontSize.md,
         fontWeight: '600',
         flex: 1,
+    },
+    countdownText: {
+        fontSize: 11,
+        fontWeight: '700',
+        marginLeft: 2,
     },
 });

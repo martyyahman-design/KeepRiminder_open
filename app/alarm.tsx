@@ -64,6 +64,29 @@ export default function AlarmScreen() {
                     </Text>
                 )}
 
+                {/* Snooze Buttons */}
+                <View style={styles.snoozeContainer}>
+                    {[
+                        { label: '1分', val: 1 },
+                        { label: '5分', val: 5 },
+                        { label: '1時間', val: 60 },
+                    ].map((s) => (
+                        <TouchableOpacity
+                            key={s.val}
+                            style={styles.snoozeButton}
+                            onPress={async () => {
+                                if (alarmState.trigger?.id) {
+                                    const { snoozeTrigger } = require('../src/services/schedulerService');
+                                    await snoozeTrigger(alarmState.trigger.id, s.val);
+                                    router.back();
+                                }
+                            }}
+                        >
+                            <Text style={styles.snoozeText}>{s.label}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+
                 {/* Stop Button */}
                 <TouchableOpacity
                     style={styles.stopButton}
@@ -152,5 +175,23 @@ const styles = StyleSheet.create({
         fontWeight: '800',
         color: '#FFFFFF',
         letterSpacing: 2,
+    },
+    snoozeContainer: {
+        flexDirection: 'row',
+        gap: Spacing.md,
+        marginBottom: Spacing.xxl,
+    },
+    snoozeButton: {
+        paddingHorizontal: Spacing.xl,
+        paddingVertical: Spacing.md,
+        borderRadius: BorderRadius.full,
+        backgroundColor: 'rgba(255, 255, 255, 0.15)',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.3)',
+    },
+    snoozeText: {
+        color: '#FFFFFF',
+        fontSize: FontSize.md,
+        fontWeight: '700',
     },
 });

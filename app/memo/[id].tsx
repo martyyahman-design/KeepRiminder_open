@@ -18,6 +18,7 @@ import { MemoColor, MEMO_COLORS, Trigger } from '../../src/types/models';
 import { useColorScheme } from 'react-native';
 import MapViewComponent from '../../src/components/MapViewComponent';
 import { CalendarDatePicker } from '../../src/components/CalendarDatePicker';
+import { CountdownText } from '../../src/components/CountdownText';
 
 export default function MemoEditScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -320,11 +321,20 @@ export default function MemoEditScreen() {
                                         color={trigger.isActive ? colors.primary : colors.textTertiary}
                                     />
                                     <View style={styles.triggerInfo}>
-                                        <Text style={[styles.triggerType, { color: colorScheme === 'dark' ? '#F5F5F7' : '#1A1A2E' }]}>
-                                            {trigger.type === 'datetime' ? '日時' :
-                                                trigger.type === 'timer' ? 'タイマー' :
-                                                    trigger.type === 'location_enter' ? 'エリア入場' : 'エリア退場'}
-                                        </Text>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+                                            <Text style={[styles.triggerType, { color: colorScheme === 'dark' ? '#F5F5F7' : '#1A1A2E' }]}>
+                                                {trigger.type === 'datetime' ? '日時' :
+                                                    trigger.type === 'timer' ? 'タイマー' :
+                                                        trigger.type === 'location_enter' ? 'エリア入場' : 'エリア退場'}
+                                            </Text>
+                                            {trigger.type === 'timer' && trigger.isActive && (
+                                                <CountdownText
+                                                    trigger={trigger}
+                                                    style={[styles.countdownText, { color: colors.primary, marginTop: 0 }]}
+                                                    hideIcon={true}
+                                                />
+                                            )}
+                                        </View>
                                         <Text style={[styles.triggerDesc, { color: colors.textSecondary }]}>
                                             {getTriggerDescription(trigger)}
                                         </Text>
@@ -547,5 +557,10 @@ const styles = StyleSheet.create({
     todoNote: {
         fontSize: FontSize.xs,
         marginLeft: Spacing.sm,
+    },
+    countdownText: {
+        fontSize: FontSize.sm,
+        fontWeight: '700',
+        marginTop: Spacing.xs,
     },
 });
