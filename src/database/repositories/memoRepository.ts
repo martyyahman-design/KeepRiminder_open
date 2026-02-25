@@ -15,13 +15,18 @@ export async function createMemo(
     const now = new Date().toISOString();
     const id = generateId();
 
+    const todoType = 'none';
+    const todoDate = null;
+    const isCompleted = false;
+    const completedAt = null;
+
     await db.runAsync(
-        `INSERT INTO memos (id, title, content, color, isPinned, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [id, title, content, color, isPinned ? 1 : 0, now, now]
+        `INSERT INTO memos (id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, title, content, color, isPinned ? 1 : 0, todoType, todoDate, isCompleted ? 1 : 0, completedAt, now, now]
     );
 
-    return { id, title, content, color, isPinned, createdAt: now, updatedAt: now };
+    return { id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt: now, updatedAt: now };
 }
 
 export async function getMemo(id: string): Promise<Memo | null> {
@@ -44,7 +49,7 @@ export async function getAllMemos(): Promise<Memo[]> {
 
 export async function updateMemo(
     id: string,
-    updates: Partial<Pick<Memo, 'title' | 'content' | 'color' | 'isPinned'>>
+    updates: Partial<Memo>
 ): Promise<void> {
     const db = await getDatabase();
     const now = new Date().toISOString();
@@ -66,6 +71,22 @@ export async function updateMemo(
     if (updates.isPinned !== undefined) {
         setClauses.push('isPinned = ?');
         values.push(updates.isPinned ? 1 : 0);
+    }
+    if (updates.todoType !== undefined) {
+        setClauses.push('todoType = ?');
+        values.push(updates.todoType);
+    }
+    if (updates.todoDate !== undefined) {
+        setClauses.push('todoDate = ?');
+        values.push(updates.todoDate);
+    }
+    if (updates.isCompleted !== undefined) {
+        setClauses.push('isCompleted = ?');
+        values.push(updates.isCompleted ? 1 : 0);
+    }
+    if (updates.completedAt !== undefined) {
+        setClauses.push('completedAt = ?');
+        values.push(updates.completedAt);
     }
 
     if (setClauses.length === 0) return;
@@ -104,6 +125,10 @@ function rowToMemo(row: any): Memo {
         content: row.content,
         color: row.color as MemoColor,
         isPinned: row.isPinned === 1,
+        todoType: row.todoType as any,
+        todoDate: row.todoDate,
+        isCompleted: row.isCompleted === 1,
+        completedAt: row.completedAt,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
     };

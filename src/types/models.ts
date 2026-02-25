@@ -5,6 +5,13 @@ export interface Memo {
     content: string;
     color: MemoColor;
     isPinned: boolean;
+
+    // TODO fields
+    todoType: 'none' | 'deadline' | 'daily';
+    todoDate: string | null; // YYYY-MM-DD
+    isCompleted: boolean;
+    completedAt: string | null;
+
     createdAt: string;
     updatedAt: string;
 }

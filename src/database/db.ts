@@ -34,6 +34,10 @@ async function initSQLite(): Promise<any> {
       content TEXT NOT NULL DEFAULT '',
       color TEXT NOT NULL DEFAULT 'default',
       isPinned INTEGER NOT NULL DEFAULT 0,
+      todoType TEXT NOT NULL DEFAULT 'none',
+      todoDate TEXT,
+      isCompleted INTEGER NOT NULL DEFAULT 0,
+      completedAt TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );
@@ -81,8 +85,8 @@ class InMemoryAdapter implements DatabaseAdapter {
     const sqlLower = sql.trim().toLowerCase();
 
     if (sqlLower.startsWith('insert into memos')) {
-      const [id, title, content, color, isPinned, createdAt, updatedAt] = params || [];
-      this.db.memos.set(id, { id, title, content, color, isPinned, createdAt, updatedAt });
+      const [id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt] = params || [];
+      this.db.memos.set(id, { id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt });
     } else if (sqlLower.startsWith('insert into triggers')) {
       const [id, memoId, type, isActive, scheduledAt, durationSeconds, startedAt,
         latitude, longitude, radius, locationName, actionType, createdAt, updatedAt] = params || [];

@@ -17,6 +17,7 @@ import { useThemeColors, Spacing, FontSize, BorderRadius } from '../../src/theme
 import { MemoColor, MEMO_COLORS, Trigger } from '../../src/types/models';
 import { useColorScheme } from 'react-native';
 import MapViewComponent from '../../src/components/MapViewComponent';
+import { CalendarDatePicker } from '../../src/components/CalendarDatePicker';
 
 export default function MemoEditScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -30,6 +31,7 @@ export default function MemoEditScreen() {
     const [content, setContent] = useState(memo?.content || '');
     const [color, setColor] = useState<MemoColor>(memo?.color || 'default');
     const [showColorPicker, setShowColorPicker] = useState(false);
+    const [showDatePicker, setShowDatePicker] = useState(false);
 
     useEffect(() => {
         if (memo) {
@@ -235,6 +237,50 @@ export default function MemoEditScreen() {
                     multiline
                     textAlignVertical="top"
                 />
+
+                {/* TODO Settings */}
+                <View style={styles.todoSection}>
+                    <Text style={[styles.sectionTitle, { color: colorScheme === 'dark' ? '#D1D5DB' : '#374151' }]}>
+                        TODO設定
+                    </Text>
+                    <View style={styles.todoTypeContainer}>
+                        {(['none', 'deadline'] as const).map((type) => (
+                            <TouchableOpacity
+                                key={type}
+                                style={[
+                                    styles.todoTypeBtn,
+                                    memo.todoType === type && { backgroundColor: `${colors.primary}20`, borderColor: colors.primary }
+                                ]}
+                                onPress={() => updateMemo(memo.id, { todoType: type, todoDate: type !== 'none' ? (memo.todoDate || new Date().toISOString().split('T')[0]) : null })}
+                            >
+                                <Text style={[styles.todoTypeBtnText, { color: memo.todoType === type ? colors.primary : colors.textSecondary }]}>
+                                    {type === 'none' ? 'なし' : '期限付き'}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+
+                    {memo.todoType !== 'none' && (
+                        <TouchableOpacity
+                            style={styles.todoDateContainer}
+                            onPress={() => setShowDatePicker(true)}
+                        >
+                            <Ionicons name="calendar-outline" size={20} color={colors.textTertiary} />
+                            <Text style={[styles.dateText, { color: colors.text }]}>
+                                {memo.todoDate || '日付を選択'}
+                            </Text>
+                            <Text style={[styles.todoNote, { color: colors.textTertiary }]}>
+                                ※ 終わるまで毎日「今日」に表示されます
+                            </Text>
+                        </TouchableOpacity>
+                    )}
+                    <CalendarDatePicker
+                        visible={showDatePicker}
+                        onClose={() => setShowDatePicker(false)}
+                        onSelect={(date) => updateMemo(memo.id, { todoDate: date })}
+                        initialDate={memo.todoDate || undefined}
+                    />
+                </View>
 
                 {/* Triggers Section */}
                 <View style={styles.triggersSection}>
@@ -460,5 +506,46 @@ const styles = StyleSheet.create({
         borderRadius: BorderRadius.md,
         overflow: 'hidden',
         borderWidth: 1,
+    },
+    todoSection: {
+        marginTop: Spacing.xl,
+        paddingTop: Spacing.lg,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(128, 128, 128, 0.15)',
+    },
+    todoTypeContainer: {
+        flexDirection: 'row',
+        gap: Spacing.sm,
+        marginTop: Spacing.sm,
+    },
+    todoTypeBtn: {
+        flex: 1,
+        paddingVertical: Spacing.sm,
+        alignItems: 'center',
+        borderRadius: BorderRadius.md,
+        borderWidth: 1,
+        borderColor: 'rgba(128, 128, 128, 0.2)',
+    },
+    todoTypeBtnText: {
+        fontSize: FontSize.sm,
+        fontWeight: '600',
+    },
+    todoDateContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: Spacing.md,
+        gap: Spacing.sm,
+        backgroundColor: 'rgba(128, 128, 128, 0.05)',
+        padding: Spacing.sm,
+        borderRadius: BorderRadius.md,
+    },
+    dateText: {
+        flex: 1,
+        fontSize: FontSize.md,
+        fontWeight: '500',
+    },
+    todoNote: {
+        fontSize: FontSize.xs,
+        marginLeft: Spacing.sm,
     },
 });

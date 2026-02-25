@@ -23,12 +23,12 @@ const CARD_MARGIN = Spacing.sm;
 const CARD_WIDTH = (SCREEN_WIDTH - Spacing.lg * 2 - CARD_MARGIN) / 2;
 
 export default function MemoListScreen() {
-    const { memos, loading, createMemo, refreshMemos } = useMemos();
+    const { memos, loading, createMemo, updateMemo, refreshMemos } = useMemos();
     const colors = useThemeColors();
     const colorScheme = useColorScheme();
     const [searchQuery, setSearchQuery] = useState('');
     const [refreshing, setRefreshing] = useState(false);
-    const [filterType, setFilterType] = useState<'all' | 'datetime' | 'timer' | 'location'>('all');
+    const [filterType, setFilterType] = useState<'all' | 'todo' | 'datetime' | 'timer' | 'location'>('all');
 
     const filteredMemos = memos
         .filter(m => {
@@ -41,6 +41,7 @@ export default function MemoListScreen() {
 
             // Trigger type filter
             if (filterType === 'all') return true;
+            if (filterType === 'todo') return m.todoType !== 'none';
             if (filterType === 'datetime') return m.triggers.some(t => t.type === 'datetime');
             if (filterType === 'timer') return m.triggers.some(t => t.type === 'timer');
             if (filterType === 'location') return m.triggers.some(t => t.type === 'location_enter' || t.type === 'location_exit');
@@ -70,6 +71,12 @@ export default function MemoListScreen() {
         return colorScheme === 'dark' ? colorDef.bgDark : colorDef.bg;
     };
 
+    const handleToggleTodo = async (item: MemoWithTriggers) => {
+        const isCompleted = !item.isCompleted;
+        const completedAt = isCompleted ? new Date().toISOString() : null;
+        await updateMemo(item.id, { isCompleted, completedAt });
+    };
+
     const getTriggerIcon = (type: string) => {
         switch (type) {
             case 'datetime': return 'calendar';
@@ -79,6 +86,16 @@ export default function MemoListScreen() {
             default: return 'notifications';
         }
     };
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayMemos = memos.filter(m => {
+        if (m.isCompleted) return false;
+        if (m.todoType === 'deadline') {
+            // Deadline tasks for today or older (carry over if not completed)
+            return !m.todoDate || m.todoDate <= todayStr;
+        }
+        return false;
+    });
 
     const renderMemoCard = ({ item }: { item: MemoWithTriggers }) => (
         <TouchableOpacity
@@ -100,16 +117,43 @@ export default function MemoListScreen() {
                 </View>
             )}
             {item.title ? (
-                <Text
-                    style={[styles.cardTitle, { color: colorScheme === 'dark' ? '#F5F5F7' : '#1A1A2E' }]}
-                    numberOfLines={2}
-                >
-                    {item.title}
-                </Text>
+                <View style={styles.cardHeader}>
+                    {item.todoType !== 'none' && (
+                        <TouchableOpacity
+                            onPress={(e) => {
+                                e.stopPropagation();
+                                const isCompleted = !item.isCompleted;
+                                const completedAt = isCompleted ? new Date().toISOString() : null;
+                                updateMemo(item.id, { isCompleted, completedAt });
+                            }}
+                            style={styles.checkbox}
+                        >
+                            <Ionicons
+                                name={item.isCompleted ? "checkbox" : "square-outline"}
+                                size={20}
+                                color={item.isCompleted ? colors.primary : colors.textTertiary}
+                            />
+                        </TouchableOpacity>
+                    )}
+                    <Text
+                        style={[
+                            styles.cardTitle,
+                            { color: colorScheme === 'dark' ? '#F5F5F7' : '#1A1A2E' },
+                            item.isCompleted && styles.completedText
+                        ]}
+                        numberOfLines={2}
+                    >
+                        {item.title}
+                    </Text>
+                </View>
             ) : null}
             {item.content ? (
                 <Text
-                    style={[styles.cardContent, { color: colorScheme === 'dark' ? '#D1D5DB' : '#4B5563' }]}
+                    style={[
+                        styles.cardContent,
+                        { color: colorScheme === 'dark' ? '#D1D5DB' : '#4B5563' },
+                        item.isCompleted && styles.completedText
+                    ]}
                     numberOfLines={6}
                 >
                     {item.content}
@@ -189,7 +233,14 @@ export default function MemoListScreen() {
                         style={[styles.filterChip, filterType === 'all' && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
                         onPress={() => setFilterType('all')}
                     >
-                        <Text style={[styles.filterText, { color: filterType === 'all' ? colors.primary : colors.textSecondary }]}>作成日時順</Text>
+                        <Text style={[styles.filterText, { color: filterType === 'all' ? colors.primary : colors.textSecondary }]}>すべて</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.filterChip, filterType === 'todo' && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
+                        onPress={() => setFilterType('todo')}
+                    >
+                        <Ionicons name="checkmark-circle-outline" size={14} color={filterType === 'todo' ? colors.primary : colors.textSecondary} />
+                        <Text style={[styles.filterText, { color: filterType === 'todo' ? colors.primary : colors.textSecondary }]}>TODO</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={[styles.filterChip, filterType === 'datetime' && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
@@ -224,8 +275,25 @@ export default function MemoListScreen() {
                 columnWrapperStyle={styles.row}
                 contentContainerStyle={[
                     styles.listContent,
-                    filteredMemos.length === 0 && styles.listEmpty,
+                    filteredMemos.length === 0 && todayMemos.length === 0 && styles.listEmpty,
                 ]}
+                ListHeaderComponent={todayMemos.length > 0 ? (
+                    <View style={styles.todaySection}>
+                        <Text style={[styles.sectionTitle, { color: colors.text }]}>今日のタスク</Text>
+                        {todayMemos.map(m => (
+                            <TouchableOpacity
+                                key={m.id}
+                                style={[styles.todayItem, { backgroundColor: getCardColor(m.color) }]}
+                                onPress={() => router.push(`/memo/${m.id}`)}
+                            >
+                                <TouchableOpacity onPress={() => handleToggleTodo(m)}>
+                                    <Ionicons name="ellipse-outline" size={24} color={colors.primary} />
+                                </TouchableOpacity>
+                                <Text style={[styles.todayItemText, { color: colors.text }]}>{m.title || '(無題)'}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                ) : null}
                 ListEmptyComponent={!loading ? renderEmptyState : null}
                 refreshControl={
                     <RefreshControl
@@ -318,10 +386,23 @@ const styles = StyleSheet.create({
         right: Spacing.sm,
     },
     cardTitle: {
+        flex: 1,
         fontSize: FontSize.md,
         fontWeight: '700',
-        marginBottom: Spacing.xs,
         lineHeight: 22,
+    },
+    cardHeader: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 6,
+        marginBottom: Spacing.xs,
+    },
+    checkbox: {
+        marginTop: 1,
+    },
+    completedText: {
+        textDecorationLine: 'line-through',
+        opacity: 0.6,
     },
     cardContent: {
         fontSize: FontSize.sm,
@@ -375,5 +456,32 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.35,
         shadowRadius: 8,
+    },
+    todaySection: {
+        marginBottom: Spacing.xl,
+        marginTop: Spacing.sm,
+    },
+    sectionTitle: {
+        fontSize: FontSize.lg,
+        fontWeight: '700',
+        marginBottom: Spacing.md,
+    },
+    todayItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: Spacing.md,
+        borderRadius: BorderRadius.md,
+        marginBottom: Spacing.sm,
+        gap: Spacing.md,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+    },
+    todayItemText: {
+        fontSize: FontSize.md,
+        fontWeight: '600',
+        flex: 1,
     },
 });

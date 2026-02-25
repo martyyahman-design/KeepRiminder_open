@@ -9,7 +9,7 @@ interface MemoContextType {
     loading: boolean;
     refreshMemos: () => Promise<void>;
     createMemo: (title?: string, content?: string) => Promise<Memo>;
-    updateMemo: (id: string, updates: Partial<Pick<Memo, 'title' | 'content' | 'color' | 'isPinned'>>) => Promise<void>;
+    updateMemo: (id: string, updates: Partial<Memo>) => Promise<void>;
     deleteMemo: (id: string) => Promise<void>;
     searchMemos: (query: string) => Promise<MemoWithTriggers[]>;
     createTrigger: (params: TriggerRepo.CreateTriggerParams) => Promise<Trigger>;
@@ -64,7 +64,7 @@ export function MemoProvider({ children }: { children: ReactNode }) {
         return memo;
     }, [refreshMemos]);
 
-    const updateMemoHandler = useCallback(async (id: string, updates: Partial<Pick<Memo, 'title' | 'content' | 'color' | 'isPinned'>>) => {
+    const updateMemoHandler = useCallback(async (id: string, updates: Partial<Memo>) => {
         await MemoRepo.updateMemo(id, updates);
         await refreshMemos();
     }, [refreshMemos]);
