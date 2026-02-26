@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Platform } from 'react-native';
+import { getDatabase } from '../database/db';
 
 interface User {
     id: string;
@@ -44,13 +45,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const client = (window as any).google.accounts.oauth2.initTokenClient({
                 client_id: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
                 scope: 'https://www.googleapis.com/auth/drive.appdata email profile',
+                prompt: 'consent', // Ensure user is prompted for scopes
                 callback: (response: any) => {
                     if (response.error) {
                         console.error('Google Auth Error:', response.error);
-                        console.error('Error Description:', response.error_description);
                         return;
                     }
+
                     if (response.access_token) {
+                        // Check if required scopes were granted
+                        const grantedScopes = response.scope || '';
+                        if (!grantedScopes.includes('https://www.googleapis.com/auth/drive.appdata')) {
+                            alert('Google Driveへのアクセス権限が許可されませんでした。アプリを同期するには、ログイン時に「Google Driveのアプリデータ表示」のチェックを入れてください。');
+                            return;
+                        }
+
                         setAccessToken(response.access_token);
 
                         // Fetch user info using access token
@@ -78,11 +87,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const signOut = async () => {
+        const db = await getDatabase();
+        await db.clearDatabase();
+
         if (Platform.OS === 'web') {
-            (window as any).google.accounts.oauth2.revoke(accessToken, () => {
+            if (accessToken) {
+                try {
+                    (window as any).google.accounts.oauth2.revoke(accessToken, () => {
+                        setUser(null);
+                        setAccessToken(null);
+                    });
+                } catch (e) {
+                    console.error('Error revoking token:', e);
+                    setUser(null);
+                    setAccessToken(null);
+                }
+            } else {
                 setUser(null);
                 setAccessToken(null);
-            });
+            }
         } else {
             setUser(null);
             setAccessToken(null);

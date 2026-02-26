@@ -12,6 +12,7 @@ import {
     Animated,
     Pressable,
     GestureResponderEvent,
+    Modal,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -37,6 +38,7 @@ export default function MemoListScreen() {
     const [isSearchVisible, setIsSearchVisible] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [filterType, setFilterType] = useState<'all' | 'todo' | 'datetime' | 'timer' | 'location'>('all');
+    const [isAccountMenuVisible, setIsAccountMenuVisible] = useState(false);
 
     const filteredMemos = memos
         .filter(m => {
@@ -60,7 +62,7 @@ export default function MemoListScreen() {
             if (filterType === 'all') {
                 return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
             }
-            return 0; // Default sorting for other filters (could be customized)
+            return 0; // Default sorting for other filters
         });
 
     const onRefresh = useCallback(async () => {
@@ -270,34 +272,109 @@ export default function MemoListScreen() {
                     <Text style={[styles.headerTitle, { color: colors.text }]}>KeepReminder</Text>
                 </View>
 
-                {/* Auth Button */}
-                <TouchableOpacity
-                    onPress={user ? signOut : signIn}
-                    disabled={authLoading}
-                    style={[
-                        styles.authBtn,
-                        { backgroundColor: colors.surface },
-                        getCardShadow(colors)
-                    ]}
-                >
-                    {authLoading ? (
-                        <View style={{ opacity: 0.5 }}>
-                            <Ionicons name="cloud-outline" size={24} color={colors.textTertiary} />
-                        </View>
-                    ) : user ? (
-                        user.photo ? (
-                            <Image source={{ uri: user.photo }} style={styles.userPhoto} />
-                        ) : (
-                            <View style={styles.userIconPlaceholder}>
-                                <Ionicons name="person-circle" size={32} color={colors.primary} />
-                                {isSyncing && <View style={[styles.syncBadge, { backgroundColor: colors.success }]} />}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+                    {/* Search Button */}
+                    <TouchableOpacity
+                        onPress={() => setIsSearchVisible(!isSearchVisible)}
+                        style={[
+                            styles.authBtn,
+                            { backgroundColor: isSearchVisible ? colors.primary + '20' : colors.surface, borderColor: isSearchVisible ? colors.primary : 'transparent', borderWidth: isSearchVisible ? 1 : 0 },
+                            getCardShadow(colors)
+                        ]}
+                    >
+                        <Ionicons name="search" size={20} color={isSearchVisible ? colors.primary : colors.textSecondary} />
+                    </TouchableOpacity>
+
+                    {/* Trash Button */}
+                    <TouchableOpacity
+                        onPress={() => router.push('/trash' as any)}
+                        style={[
+                            styles.authBtn,
+                            { backgroundColor: colors.surface },
+                            getCardShadow(colors)
+                        ]}
+                    >
+                        <Ionicons name="trash-outline" size={20} color={colors.textSecondary} />
+                    </TouchableOpacity>
+
+                    {/* Auth Button */}
+                    <TouchableOpacity
+                        onPress={user ? () => setIsAccountMenuVisible(true) : signIn}
+                        disabled={authLoading}
+                        style={[
+                            styles.authBtn,
+                            { backgroundColor: colors.surface },
+                            getCardShadow(colors)
+                        ]}
+                    >
+                        {authLoading ? (
+                            <View style={{ opacity: 0.5 }}>
+                                <Ionicons name="cloud-outline" size={24} color={colors.textTertiary} />
                             </View>
-                        )
-                    ) : (
-                        <Ionicons name="log-in-outline" size={24} color={colors.primary} />
-                    )}
-                </TouchableOpacity>
+                        ) : user ? (
+                            user.photo ? (
+                                <Image source={{ uri: user.photo }} style={styles.userPhoto} />
+                            ) : (
+                                <View style={styles.userIconPlaceholder}>
+                                    <Ionicons name="person-circle" size={32} color={colors.primary} />
+                                    {isSyncing && <View style={[styles.syncBadge, { backgroundColor: colors.success }]} />}
+                                </View>
+                            )
+                        ) : (
+                            <Ionicons name="log-in-outline" size={24} color={colors.primary} />
+                        )}
+                    </TouchableOpacity>
+                </View>
             </View>
+
+            {/* Account Info Modal */}
+            <Modal
+                visible={isAccountMenuVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setIsAccountMenuVisible(false)}
+            >
+                <Pressable
+                    style={styles.modalOverlay}
+                    onPress={() => setIsAccountMenuVisible(false)}
+                >
+                    <View
+                        style={[styles.accountMenu, { backgroundColor: colors.surface }, getCardShadow(colors)]}
+                        onPress={(e) => e.stopPropagation()}
+                    >
+                        {user && (
+                            <>
+                                <View style={styles.accountHeader}>
+                                    {user.photo ? (
+                                        <Image source={{ uri: user.photo }} style={styles.menuUserPhoto} />
+                                    ) : (
+                                        <View style={[styles.menuUserIcon, { backgroundColor: colors.primary + '15' }]}>
+                                            <Ionicons name="person" size={24} color={colors.primary} />
+                                        </View>
+                                    )}
+                                    <View style={styles.userInfo}>
+                                        <Text style={[styles.userName, { color: colors.text }]}>{user.name || 'ユーザー'}</Text>
+                                        <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{user.email}</Text>
+                                    </View>
+                                </View>
+
+                                <View style={[styles.menuSeparator, { backgroundColor: colors.border }]} />
+
+                                <TouchableOpacity
+                                    style={styles.logoutBtn}
+                                    onPress={() => {
+                                        setIsAccountMenuVisible(false);
+                                        signOut();
+                                    }}
+                                >
+                                    <Ionicons name="log-out-outline" size={20} color={colors.error} />
+                                    <Text style={[styles.logoutText, { color: colors.error }]}>ログアウト</Text>
+                                </TouchableOpacity>
+                            </>
+                        )}
+                    </View>
+                </Pressable>
+            </Modal>
 
             {/* Login Warning Banner */}
             {!user && !authLoading && (
@@ -764,5 +841,62 @@ const styles = StyleSheet.create({
     },
     badgeWrapper: {
         gap: 4,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.3)',
+        justifyContent: 'flex-start',
+        alignItems: 'flex-end',
+        paddingTop: 80,
+        paddingRight: Spacing.lg,
+    },
+    accountMenu: {
+        width: 240,
+        borderRadius: BorderRadius.lg,
+        padding: Spacing.md,
+    },
+    accountHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.md,
+        marginBottom: Spacing.md,
+    },
+    menuUserPhoto: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+    },
+    menuUserIcon: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    userInfo: {
+        flex: 1,
+    },
+    userName: {
+        fontSize: FontSize.md,
+        fontWeight: '700',
+    },
+    userEmail: {
+        fontSize: FontSize.xs,
+        marginTop: 2,
+    },
+    menuSeparator: {
+        height: 1,
+        marginBottom: Spacing.sm,
+        opacity: 0.1,
+    },
+    logoutBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.sm,
+        paddingVertical: 8,
+    },
+    logoutText: {
+        fontSize: FontSize.sm,
+        fontWeight: '700',
     },
 });

@@ -19,14 +19,15 @@ export async function createMemo(
     const todoDate = null;
     const isCompleted = false;
     const completedAt = null;
+    const deletedAt = null;
 
     await db.runAsync(
-        `INSERT INTO memos (id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, title, content, color, isPinned ? 1 : 0, todoType, todoDate, isCompleted ? 1 : 0, completedAt, now, now]
+        `INSERT INTO memos (id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, title, content, color, isPinned ? 1 : 0, todoType, todoDate, isCompleted ? 1 : 0, completedAt, now, now, deletedAt]
     );
 
-    return { id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt: now, updatedAt: now };
+    return { id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt: now, updatedAt: now, deletedAt };
 }
 
 export async function getMemo(id: string): Promise<Memo | null> {
@@ -42,7 +43,15 @@ export async function getMemo(id: string): Promise<Memo | null> {
 export async function getAllMemos(): Promise<Memo[]> {
     const db = await getDatabase();
     const rows = await db.getAllAsync<any>(
-        'SELECT * FROM memos ORDER BY isPinned DESC, updatedAt DESC'
+        'SELECT * FROM memos WHERE deletedAt IS NULL ORDER BY isPinned DESC, updatedAt DESC'
+    );
+    return rows.map(rowToMemo);
+}
+
+export async function getDeletedMemos(): Promise<Memo[]> {
+    const db = await getDatabase();
+    const rows = await db.getAllAsync<any>(
+        'SELECT * FROM memos WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC'
     );
     return rows.map(rowToMemo);
 }
@@ -103,7 +112,23 @@ export async function updateMemo(
 
 export async function deleteMemo(id: string): Promise<void> {
     const db = await getDatabase();
+    const now = new Date().toISOString();
+    await db.runAsync('UPDATE memos SET deletedAt = ? WHERE id = ?', [now, id]);
+}
+
+export async function restoreMemo(id: string): Promise<void> {
+    const db = await getDatabase();
+    await db.runAsync('UPDATE memos SET deletedAt = NULL WHERE id = ?', [id]);
+}
+
+export async function permanentlyDeleteMemo(id: string): Promise<void> {
+    const db = await getDatabase();
     await db.runAsync('DELETE FROM memos WHERE id = ?', [id]);
+}
+
+export async function emptyTrash(): Promise<void> {
+    const db = await getDatabase();
+    await db.runAsync('DELETE FROM memos WHERE deletedAt IS NOT NULL');
 }
 
 export async function searchMemos(query: string): Promise<Memo[]> {
@@ -111,7 +136,7 @@ export async function searchMemos(query: string): Promise<Memo[]> {
     const searchQuery = `%${query}%`;
     const rows = await db.getAllAsync<any>(
         `SELECT * FROM memos 
-     WHERE title LIKE ? OR content LIKE ?
+     WHERE deletedAt IS NULL AND (title LIKE ? OR content LIKE ?)
      ORDER BY isPinned DESC, updatedAt DESC`,
         [searchQuery, searchQuery]
     );
@@ -131,6 +156,7 @@ function rowToMemo(row: any): Memo {
         completedAt: row.completedAt,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
+        deletedAt: row.deletedAt,
     };
 }
 
@@ -142,22 +168,22 @@ export async function upsertMemo(memo: Memo): Promise<void> {
         await db.runAsync(
             `UPDATE memos SET 
             title = ?, content = ?, color = ?, isPinned = ?, todoType = ?, 
-            todoDate = ?, isCompleted = ?, completedAt = ?, updatedAt = ? 
+            todoDate = ?, isCompleted = ?, completedAt = ?, updatedAt = ?, deletedAt = ? 
             WHERE id = ?`,
             [
                 memo.title, memo.content, memo.color, memo.isPinned ? 1 : 0, memo.todoType,
-                memo.todoDate, memo.isCompleted ? 1 : 0, memo.completedAt, memo.updatedAt, memo.id
+                memo.todoDate, memo.isCompleted ? 1 : 0, memo.completedAt, memo.updatedAt, memo.deletedAt, memo.id
             ]
         );
     } else {
         await db.runAsync(
             `INSERT INTO memos (
             id, title, content, color, isPinned, todoType, todoDate, 
-            isCompleted, completedAt, createdAt, updatedAt
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            isCompleted, completedAt, createdAt, updatedAt, deletedAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 memo.id, memo.title, memo.content, memo.color, memo.isPinned ? 1 : 0, memo.todoType,
-                memo.todoDate, memo.isCompleted ? 1 : 0, memo.completedAt, memo.createdAt, memo.updatedAt
+                memo.todoDate, memo.isCompleted ? 1 : 0, memo.completedAt, memo.createdAt, memo.updatedAt, memo.deletedAt
             ]
         );
     }

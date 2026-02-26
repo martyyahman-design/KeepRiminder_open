@@ -41,7 +41,8 @@ async function initSQLite(): Promise<any> {
       isCompleted INTEGER NOT NULL DEFAULT 0,
       completedAt TEXT,
       createdAt TEXT NOT NULL,
-      updatedAt TEXT NOT NULL
+      updatedAt TEXT NOT NULL,
+      deletedAt TEXT
     );
 
     CREATE TABLE IF NOT EXISTS triggers (
@@ -83,6 +84,7 @@ export interface DatabaseAdapter {
   runAsync(sql: string, params?: any[]): Promise<any>;
   getFirstAsync<T = any>(sql: string, params?: any[]): Promise<T | null>;
   getAllAsync<T = any>(sql: string, params?: any[]): Promise<T[]>;
+  clearDatabase(): Promise<void>;
 }
 
 // In-memory adapter for Web
@@ -97,8 +99,8 @@ class InMemoryAdapter implements DatabaseAdapter {
     const sqlLower = sql.trim().toLowerCase();
 
     if (sqlLower.startsWith('insert into memos')) {
-      const [id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt] = params || [];
-      this.db.memos.set(id, { id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt });
+      const [id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt] = params || [];
+      this.db.memos.set(id, { id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt: deletedAt || null });
     } else if (sqlLower.startsWith('insert into triggers')) {
       const [id, memoId, type, isActive, scheduledAt, durationSeconds, startedAt,
         latitude, longitude, radius, locationName, actionType, createdAt, updatedAt] = params || [];
@@ -187,6 +189,15 @@ class InMemoryAdapter implements DatabaseAdapter {
     if (sqlLower.includes('from memos')) {
       let results = Array.from(this.db.memos.values());
 
+      // 論理削除の考慮
+      if (!sqlLower.includes('deletedat is not null') && !sqlLower.includes('deletedat is null')) {
+        results = results.filter(m => !m.deletedAt);
+      } else if (sqlLower.includes('deletedat is not null')) {
+        results = results.filter(m => !!m.deletedAt);
+      } else if (sqlLower.includes('deletedat is null')) {
+        results = results.filter(m => !m.deletedAt);
+      }
+
       // Handle WHERE clause
       if (sqlLower.includes('where id =')) {
         results = results.filter(m => m.id === params?.[0]);
@@ -235,6 +246,12 @@ class InMemoryAdapter implements DatabaseAdapter {
 
     return [];
   }
+
+  async clearDatabase(): Promise<void> {
+    this.db.memos.clear();
+    this.db.triggers.clear();
+    this.db.locationPresets.clear();
+  }
 }
 
 // SQLite adapter for native
@@ -255,6 +272,14 @@ class SQLiteAdapter implements DatabaseAdapter {
 
   async getAllAsync<T = any>(sql: string, params?: any[]): Promise<T[]> {
     return this.database.getAllAsync(sql, params || []);
+  }
+
+  async clearDatabase(): Promise<void> {
+    await this.database.execAsync(`
+      DELETE FROM triggers;
+      DELETE FROM memos;
+      DELETE FROM location_presets;
+    `);
   }
 }
 

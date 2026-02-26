@@ -24,6 +24,7 @@ export interface DatabaseAdapter {
   runAsync(sql: string, params?: any[]): Promise<any>;
   getFirstAsync<T = any>(sql: string, params?: any[]): Promise<T | null>;
   getAllAsync<T = any>(sql: string, params?: any[]): Promise<T[]>;
+  clearDatabase(): Promise<void>;
 }
 
 // In-memory adapter for Web
@@ -38,8 +39,8 @@ class InMemoryAdapter implements DatabaseAdapter {
     const sqlLower = sql.trim().toLowerCase();
 
     if (sqlLower.startsWith('insert into memos')) {
-      const [id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt] = params || [];
-      this.db.memos.set(id, { id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt });
+      const [id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt] = params || [];
+      this.db.memos.set(id, { id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt: deletedAt || null });
     } else if (sqlLower.startsWith('insert into triggers')) {
       const [id, memoId, type, isActive, scheduledAt, durationSeconds, startedAt,
         latitude, longitude, radius, locationName, actionType, createdAt, updatedAt] = params || [];
@@ -121,6 +122,17 @@ class InMemoryAdapter implements DatabaseAdapter {
 
     if (sqlLower.includes('from memos')) {
       let results = Array.from(this.db.memos.values());
+
+      // 論理削除の考慮（特に指定がない場合は削除されていないものだけを返す）
+      if (!sqlLower.includes('deletedat is not null') && !sqlLower.includes('deletedat is null')) {
+        // デフォルトは削除されていないもの
+        results = results.filter(m => !m.deletedAt);
+      } else if (sqlLower.includes('deletedat is not null')) {
+        results = results.filter(m => !!m.deletedAt);
+      } else if (sqlLower.includes('deletedat is null')) {
+        results = results.filter(m => !m.deletedAt);
+      }
+
       if (sqlLower.includes('where id =')) {
         results = results.filter(m => m.id === params?.[0]);
       } else if (sqlLower.includes('where title like')) {
@@ -161,6 +173,12 @@ class InMemoryAdapter implements DatabaseAdapter {
       return results as T[];
     }
     return [];
+  }
+
+  async clearDatabase(): Promise<void> {
+    this.db.memos.clear();
+    this.db.triggers.clear();
+    this.db.locationPresets.clear();
   }
 }
 
