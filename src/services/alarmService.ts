@@ -24,6 +24,7 @@ function notifyListeners(): void {
 }
 
 export async function startAlarm(memo: Memo, trigger: Trigger): Promise<void> {
+    if (Platform.OS === 'web') return;
     // Stop any existing alarm first
     await stopAlarm();
 

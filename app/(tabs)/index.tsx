@@ -13,6 +13,9 @@ import {
     Pressable,
     GestureResponderEvent,
     Modal,
+    Platform,
+    Image,
+    useColorScheme,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,7 +23,6 @@ import { useMemos } from '../../src/contexts/MemoContext';
 import { useThemeColors, Spacing, FontSize, BorderRadius, getCardShadow } from '../../src/theme';
 import { MemoWithTriggers, MEMO_COLORS, MemoColor } from '../../src/types/models';
 import { CountdownText } from '../../src/components/CountdownText';
-import { useColorScheme, Image } from 'react-native';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useSync } from '../../src/contexts/SyncContext';
 
@@ -326,6 +328,16 @@ export default function MemoListScreen() {
                     </TouchableOpacity>
                 </View>
             </View>
+
+            {/* Web Notice */}
+            {Platform.OS === 'web' && (
+                <View style={styles.webNotice}>
+                    <Ionicons name="notifications-off-outline" size={12} color={colors.textTertiary} />
+                    <Text style={[styles.webNoticeText, { color: colors.textTertiary }]}>
+                        ※Web版では通知・アラーム機能は動作しません
+                    </Text>
+                </View>
+            )}
 
             {/* Account Info Modal */}
             <Modal
@@ -898,5 +910,17 @@ const styles = StyleSheet.create({
     logoutText: {
         fontSize: FontSize.sm,
         fontWeight: '700',
+    },
+    webNotice: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: Spacing.xs,
+        gap: Spacing.xs,
+        opacity: 0.8,
+    },
+    webNoticeText: {
+        fontSize: 10,
+        fontWeight: '500',
     },
 });

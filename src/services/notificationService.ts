@@ -14,7 +14,7 @@ Notifications.setNotificationHandler({
 });
 
 export async function requestNotificationPermissions(): Promise<boolean> {
-    if (Platform.OS === 'web') return true;
+    if (Platform.OS === 'web') return false;
 
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;

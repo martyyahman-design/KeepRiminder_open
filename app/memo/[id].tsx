@@ -304,6 +304,15 @@ export default function MemoEditScreen() {
                     />
                 </View>
 
+                {Platform.OS === 'web' && (
+                    <View style={styles.webNotice}>
+                        <Ionicons name="notifications-off-outline" size={12} color={colors.textTertiary} />
+                        <Text style={[styles.webNoticeText, { color: colors.textTertiary }]}>
+                            ※Web版では通知・アラーム機能は動作しません
+                        </Text>
+                    </View>
+                )}
+
                 {/* Triggers Section */}
                 <View style={styles.triggersSection}>
                     <View style={styles.triggersSectionHeader}>
@@ -472,6 +481,18 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: '500',
         opacity: 0.8,
+    },
+    webNotice: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: Spacing.md,
+        paddingBottom: Spacing.sm,
+        gap: Spacing.xs,
+        opacity: 0.8,
+    },
+    webNoticeText: {
+        fontSize: FontSize.xs,
+        fontWeight: '500',
     },
     contentInput: {
         fontSize: FontSize.md,
