@@ -42,7 +42,8 @@ async function initSQLite(): Promise<any> {
       completedAt TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
-      deletedAt TEXT
+      deletedAt TEXT,
+      blocks TEXT
     );
 
     CREATE TABLE IF NOT EXISTS triggers (
@@ -76,7 +77,24 @@ async function initSQLite(): Promise<any> {
     CREATE INDEX IF NOT EXISTS idx_triggers_memoId ON triggers(memoId);
     CREATE INDEX IF NOT EXISTS idx_triggers_type ON triggers(type);
     CREATE INDEX IF NOT EXISTS idx_triggers_isActive ON triggers(isActive);
+ 
+    -- Migration: Check if blocks column exists in memos table
+    PRAGMA table_info(memos);
+    -- Note: PRAGMA within execAsync can be tricky, but we'll use it to ensure it runs or handle via js logic
   `);
+
+  // Proper migration for native SQLite
+  const tableInfo = await database.getAllAsync<{ name: string }>('PRAGMA table_info(memos)');
+  const hasBlocks = tableInfo.some(col => col.name === 'blocks');
+  if (!hasBlocks) {
+    try {
+      await database.execAsync('ALTER TABLE memos ADD COLUMN blocks TEXT');
+      console.log('Migration: Added blocks column to memos table');
+    } catch (err) {
+      console.warn('Migration failed (blocks may already exist):', err);
+    }
+  }
+
   return database;
 }
 

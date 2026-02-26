@@ -20,14 +20,15 @@ export async function createMemo(
     const isCompleted = false;
     const completedAt = null;
     const deletedAt = null;
+    const blocks = [{ id: '1', type: 'text', content }];
 
     await db.runAsync(
-        `INSERT INTO memos (id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, title, content, color, isPinned ? 1 : 0, todoType, todoDate, isCompleted ? 1 : 0, completedAt, now, now, deletedAt]
+        `INSERT INTO memos (id, title, content, blocks, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, title, content, JSON.stringify(blocks), color, isPinned ? 1 : 0, todoType, todoDate, isCompleted ? 1 : 0, completedAt, now, now, deletedAt]
     );
 
-    return { id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt: now, updatedAt: now, deletedAt };
+    return { id, title, content, blocks, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt: now, updatedAt: now, deletedAt };
 }
 
 export async function getMemo(id: string): Promise<Memo | null> {
@@ -97,6 +98,10 @@ export async function updateMemo(
         setClauses.push('completedAt = ?');
         values.push(updates.completedAt);
     }
+    if (updates.blocks !== undefined) {
+        setClauses.push('blocks = ?');
+        values.push(JSON.stringify(updates.blocks));
+    }
 
     if (setClauses.length === 0) return;
 
@@ -144,10 +149,25 @@ export async function searchMemos(query: string): Promise<Memo[]> {
 }
 
 function rowToMemo(row: any): Memo {
+    let blocks = [];
+    try {
+        blocks = row.blocks ? JSON.parse(row.blocks) : [];
+    } catch (e) {
+        console.warn('Failed to parse blocks JSON', e);
+    }
+
+    // Fallback for older data or empty blocks
+    if (blocks.length === 0 && row.content) {
+        blocks = [{ id: 'fallback-' + Date.now(), type: 'text', content: row.content }];
+    } else if (blocks.length === 0) {
+        blocks = [{ id: 'initial-' + Date.now(), type: 'text', content: '' }];
+    }
+
     return {
         id: row.id,
         title: row.title,
         content: row.content,
+        blocks,
         color: row.color as MemoColor,
         isPinned: row.isPinned === 1,
         todoType: row.todoType as any,
@@ -164,25 +184,24 @@ export async function upsertMemo(memo: Memo): Promise<void> {
     const db = await getDatabase();
     const existing = await db.getFirstAsync('SELECT id FROM memos WHERE id = ?', [memo.id]);
     if (existing) {
-        // Need to pass individual fields or update updateMemo to take full Memo
         await db.runAsync(
             `UPDATE memos SET 
-            title = ?, content = ?, color = ?, isPinned = ?, todoType = ?, 
+            title = ?, content = ?, blocks = ?, color = ?, isPinned = ?, todoType = ?, 
             todoDate = ?, isCompleted = ?, completedAt = ?, updatedAt = ?, deletedAt = ? 
             WHERE id = ?`,
             [
-                memo.title, memo.content, memo.color, memo.isPinned ? 1 : 0, memo.todoType,
+                memo.title, memo.content, JSON.stringify(memo.blocks), memo.color, memo.isPinned ? 1 : 0, memo.todoType,
                 memo.todoDate, memo.isCompleted ? 1 : 0, memo.completedAt, memo.updatedAt, memo.deletedAt, memo.id
             ]
         );
     } else {
         await db.runAsync(
             `INSERT INTO memos (
-            id, title, content, color, isPinned, todoType, todoDate, 
+            id, title, content, blocks, color, isPinned, todoType, todoDate, 
             isCompleted, completedAt, createdAt, updatedAt, deletedAt
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
-                memo.id, memo.title, memo.content, memo.color, memo.isPinned ? 1 : 0, memo.todoType,
+                memo.id, memo.title, memo.content, JSON.stringify(memo.blocks), memo.color, memo.isPinned ? 1 : 0, memo.todoType,
                 memo.todoDate, memo.isCompleted ? 1 : 0, memo.completedAt, memo.createdAt, memo.updatedAt, memo.deletedAt
             ]
         );

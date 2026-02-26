@@ -11,6 +11,7 @@ import {
     Platform,
     Pressable,
     GestureResponderEvent,
+    Image,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,8 +21,11 @@ import { MemoColor, MEMO_COLORS, Trigger } from '../../src/types/models';
 import { useColorScheme } from 'react-native';
 import { formatDate } from '../../src/utils/dateUtils';
 import MapViewComponent from '../../src/components/MapViewComponent';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import { CalendarDatePicker } from '../../src/components/CalendarDatePicker';
 import { CountdownText } from '../../src/components/CountdownText';
+import { ContentBlock } from '../../src/types/models';
 
 export default function MemoEditScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -34,6 +38,9 @@ export default function MemoEditScreen() {
     const [title, setTitle] = useState(memo?.title || '');
     const [content, setContent] = useState(memo?.content || '');
     const [color, setColor] = useState<MemoColor>(memo?.color || 'default');
+    const [blocks, setBlocks] = useState<ContentBlock[]>(memo?.blocks || [{ id: '1', type: 'text', content: '' }]);
+    const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
+    const [selection, setSelection] = useState({ start: 0, end: 0 });
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [showDatePicker, setShowDatePicker] = useState(false);
 
@@ -42,6 +49,7 @@ export default function MemoEditScreen() {
             setTitle(memo.title);
             setContent(memo.content);
             setColor(memo.color);
+            setBlocks(memo.blocks);
         }
     }, [memo?.id]);
 
@@ -49,10 +57,12 @@ export default function MemoEditScreen() {
     useEffect(() => {
         if (!id) return;
         const timer = setTimeout(() => {
-            updateMemo(id, { title, content, color });
+            // Update redundant content field for search compatibility
+            const plainContent = blocks.filter(b => b.type === 'text').map(b => b.content).join('\n');
+            updateMemo(id, { title, content: plainContent, color, blocks });
         }, 500);
         return () => clearTimeout(timer);
-    }, [title, content, color, id]);
+    }, [title, blocks, color, id]);
 
     const handleTogglePin = async () => {
         if (!id || !memo) return;
@@ -115,6 +125,101 @@ export default function MemoEditScreen() {
     const getCardBg = (c: MemoColor) => {
         const colorDef = MEMO_COLORS[c];
         return colorScheme === 'dark' ? colorDef.bgDark : colorDef.bg;
+    };
+
+    const handleAddImage = async (insertIndex?: number) => {
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: false,
+            quality: 0.8,
+        });
+
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+            const asset = result.assets[0];
+            let imageUri = asset.uri;
+
+            // On Native, copy to app's document directory for persistence
+            if (Platform.OS !== 'web') {
+                const filename = `img_${Date.now()}.jpg`;
+                const newUri = `${(FileSystem as any).documentDirectory}${filename}`;
+                try {
+                    await (FileSystem as any).copyAsync({ from: imageUri, to: newUri });
+                    imageUri = newUri;
+                } catch (err) {
+                    console.error('Failed to copy image', err);
+                }
+            }
+
+            const imageBlock: ContentBlock = {
+                id: `img-${Date.now()}`,
+                type: 'image',
+                content: imageUri,
+            };
+
+            setBlocks(prev => {
+                const newBlocks = [...prev];
+
+                // Case 1: Specific index provided (e.g. from inline plus button)
+                if (typeof insertIndex === 'number') {
+                    newBlocks.splice(insertIndex, 0, imageBlock);
+                    return newBlocks;
+                }
+
+                // Case 2: Split current active text block
+                if (activeBlockId) {
+                    const index = prev.findIndex(b => b.id === activeBlockId);
+                    if (index !== -1) {
+                        const currentBlock = prev[index];
+                        if (currentBlock.type === 'text') {
+                            const beforeText = currentBlock.content.substring(0, selection.start);
+                            const afterText = currentBlock.content.substring(selection.end);
+
+                            newBlocks[index] = { ...currentBlock, content: beforeText };
+                            const afterBlock: ContentBlock = { id: `text-after-${Date.now()}`, type: 'text', content: afterText };
+                            newBlocks.splice(index + 1, 0, imageBlock, afterBlock);
+                            return newBlocks;
+                        }
+                    }
+                }
+
+                // Case 3: Simple append at the end
+                const nextTextBlock: ContentBlock = {
+                    id: `text-${Date.now()}`,
+                    type: 'text',
+                    content: '',
+                };
+                return [...prev, imageBlock, nextTextBlock];
+            });
+        }
+    };
+
+    const handleAddTextBlock = (afterId?: string) => {
+        const newBlock: ContentBlock = {
+            id: `text-${Date.now()}`,
+            type: 'text',
+            content: '',
+        };
+        setBlocks(prev => {
+            if (!afterId) return [...prev, newBlock];
+            const index = prev.findIndex(b => b.id === afterId);
+            const newBlocks = [...prev];
+            newBlocks.splice(index + 1, 0, newBlock);
+            return newBlocks;
+        });
+    };
+
+    const handleUpdateBlock = (blockId: string, value: string) => {
+        setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, content: value } : b));
+    };
+
+    const handleDeleteBlock = (blockId: string) => {
+        // Don't delete if it's the only block? No, images can be deleted.
+        // But if multiple text blocks exist and one is empty, we might want to merge.
+        // Simplified: just filter.
+        setBlocks(prev => {
+            const result = prev.filter(b => b.id !== blockId);
+            return result.length > 0 ? result : [{ id: Date.now().toString(), type: 'text', content: '' }];
+        });
     };
 
     const getTriggerDescription = (trigger: Trigger): string => {
@@ -249,16 +354,66 @@ export default function MemoEditScreen() {
                     multiline
                 />
 
-                {/* Content */}
-                <TextInput
-                    style={[styles.contentInput, { color: colorScheme === 'dark' ? '#D1D5DB' : '#374151' }]}
-                    placeholder="メモを入力..."
-                    placeholderTextColor={colorScheme === 'dark' ? '#6B7280' : '#9CA3AF'}
-                    value={content}
-                    onChangeText={setContent}
-                    multiline
-                    textAlignVertical="top"
-                />
+                {/* Blocks Editor */}
+                {blocks.map((block, index) => (
+                    <React.Fragment key={block.id}>
+                        <View style={styles.blockContainer}>
+                            {block.type === 'text' ? (
+                                <TextInput
+                                    style={[styles.contentInput, { color: colorScheme === 'dark' ? '#D1D5DB' : '#374151' }]}
+                                    placeholder="メモを入力..."
+                                    placeholderTextColor={colorScheme === 'dark' ? '#6B7280' : '#9CA3AF'}
+                                    value={block.content}
+                                    onChangeText={(text) => handleUpdateBlock(block.id, text)}
+                                    onFocus={() => setActiveBlockId(block.id)}
+                                    onSelectionChange={(e) => {
+                                        if (activeBlockId === block.id) {
+                                            setSelection(e.nativeEvent.selection);
+                                        }
+                                    }}
+                                    multiline
+                                    scrollEnabled={false}
+                                />
+                            ) : (
+                                <View style={styles.imageBlockContainer}>
+                                    <Image source={{ uri: block.content }} style={styles.imageBlock} resizeMode="cover" />
+                                    <TouchableOpacity
+                                        style={styles.deleteBlockBtn}
+                                        onPress={() => handleDeleteBlock(block.id)}
+                                    >
+                                        <Ionicons name="close-circle" size={24} color={colors.error} />
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+                        </View>
+
+                        {/* Inline Add Button between blocks */}
+                        <View style={styles.inlineAddBtn}>
+                            <View style={[styles.inlineAddLine, { backgroundColor: colors.border }]} />
+                            <TouchableOpacity
+                                style={[styles.inlineAddAction, { backgroundColor: colors.background, borderColor: colors.border }]}
+                                onPress={() => handleAddTextBlock(block.id)}
+                            >
+                                <Ionicons name="text" size={12} color={colors.textTertiary} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.inlineAddAction, { backgroundColor: colors.background, borderColor: colors.border }]}
+                                onPress={() => handleAddImage(index + 1)}
+                            >
+                                <Ionicons name="image" size={12} color={colors.textTertiary} />
+                            </TouchableOpacity>
+                            <View style={[styles.inlineAddLine, { backgroundColor: colors.border }]} />
+                        </View>
+                    </React.Fragment>
+                ))}
+
+                <TouchableOpacity
+                    style={[styles.addImageBtn, { borderColor: colors.primary + '30', backgroundColor: colors.primary + '05' }]}
+                    onPress={() => handleAddImage()}
+                >
+                    <Ionicons name="image-outline" size={20} color={colors.primary} />
+                    <Text style={[styles.addImageText, { color: colors.primary }]}>画像を末尾に追加</Text>
+                </TouchableOpacity>
 
                 {/* TODO Settings */}
                 <View style={styles.todoSection}>
@@ -413,6 +568,21 @@ export default function MemoEditScreen() {
                     </View>
                 )}
             </ScrollView>
+
+            {/* Floating Editor Toolbar (Visible when text is focused) */}
+            {activeBlockId && (
+                <View style={[styles.editorToolbar, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
+                    <TouchableOpacity style={styles.toolbarItem} onPress={() => handleAddImage()}>
+                        <Ionicons name="image" size={24} color={colors.primary} />
+                        <Text style={[styles.toolbarText, { color: colors.primary }]}>現在地に挿入</Text>
+                    </TouchableOpacity>
+                    <View style={styles.toolbarSeparator} />
+                    <TouchableOpacity style={styles.toolbarItem} onPress={() => setActiveBlockId(null)}>
+                        <Ionicons name="checkmark" size={24} color={colors.textSecondary} />
+                        <Text style={[styles.toolbarText, { color: colors.textSecondary }]}>完了</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
         </KeyboardAvoidingView>
     );
 }
@@ -465,6 +635,114 @@ const styles = StyleSheet.create({
         marginBottom: Spacing.md,
         lineHeight: 32,
     },
+    contentInput: {
+        fontSize: FontSize.md,
+        lineHeight: 24,
+        paddingHorizontal: Spacing.lg,
+        paddingBottom: Spacing.md,
+        minHeight: 40,
+        textAlignVertical: 'top',
+    },
+    blockContainer: {
+        marginBottom: Spacing.xs,
+    },
+    imageBlockContainer: {
+        marginHorizontal: Spacing.lg,
+        marginVertical: Spacing.sm,
+        position: 'relative',
+    },
+    imageBlock: {
+        width: '100%',
+        aspectRatio: 4 / 3,
+        borderRadius: BorderRadius.md,
+    },
+    deleteBlockBtn: {
+        position: 'absolute',
+        top: -10,
+        right: -10,
+        backgroundColor: 'white',
+        borderRadius: 12,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 2,
+    },
+    addImageBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginHorizontal: Spacing.lg,
+        marginVertical: Spacing.md,
+        paddingVertical: Spacing.sm,
+        borderWidth: 1,
+        borderStyle: 'dashed',
+        borderRadius: BorderRadius.md,
+        gap: Spacing.sm,
+    },
+    addImageText: {
+        fontSize: FontSize.sm,
+        fontWeight: '600',
+    },
+    inlineAddBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginVertical: Spacing.xs,
+        paddingHorizontal: Spacing.xl,
+        height: 20,
+        opacity: 0.3,
+    },
+    inlineAddLine: {
+        flex: 1,
+        height: 1,
+    },
+    inlineAddCircle: {
+        width: 18,
+        height: 18,
+        borderRadius: 9,
+        borderWidth: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginHorizontal: Spacing.sm,
+    },
+    inlineAddAction: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        borderWidth: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginHorizontal: 4,
+    },
+    editorToolbar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: Spacing.lg,
+        paddingVertical: Spacing.sm,
+        borderTopWidth: 1,
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+    },
+    toolbarItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.sm,
+        paddingVertical: Spacing.xs,
+        paddingHorizontal: Spacing.md,
+    },
+    toolbarText: {
+        fontSize: FontSize.sm,
+        fontWeight: '600',
+    },
+    toolbarSeparator: {
+        width: 1,
+        height: 20,
+        backgroundColor: 'rgba(128, 128, 128, 0.2)',
+        marginHorizontal: Spacing.sm,
+    },
     dateHeader: {
         flexDirection: 'row',
         flexWrap: 'wrap',
@@ -493,11 +771,6 @@ const styles = StyleSheet.create({
     webNoticeText: {
         fontSize: FontSize.xs,
         fontWeight: '500',
-    },
-    contentInput: {
-        fontSize: FontSize.md,
-        lineHeight: 24,
-        minHeight: 120,
     },
     triggersSection: {
         marginTop: Spacing.xxl,

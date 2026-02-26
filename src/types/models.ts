@@ -1,8 +1,14 @@
-// Memo & Trigger type definitions
+export interface ContentBlock {
+    id: string;
+    type: 'text' | 'image';
+    content: string; // text content or image URI
+}
+
 export interface Memo {
     id: string;
     title: string;
-    content: string;
+    content: string; // Fallback plain text for search and older apps
+    blocks: ContentBlock[]; // New structured content
     color: MemoColor;
     isPinned: boolean;
 
@@ -11,6 +17,7 @@ export interface Memo {
     todoDate: string | null; // YYYY-MM-DD
     isCompleted: boolean;
     completedAt: string | null;
+    deletedAt?: string | null;
 
     createdAt: string;
     updatedAt: string;

@@ -39,8 +39,8 @@ class InMemoryAdapter implements DatabaseAdapter {
     const sqlLower = sql.trim().toLowerCase();
 
     if (sqlLower.startsWith('insert into memos')) {
-      const [id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt] = params || [];
-      this.db.memos.set(id, { id, title, content, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt: deletedAt || null });
+      const [id, title, content, blocks, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt] = params || [];
+      this.db.memos.set(id, { id, title, content, blocks, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt: deletedAt || null });
     } else if (sqlLower.startsWith('insert into triggers')) {
       const [id, memoId, type, isActive, scheduledAt, durationSeconds, startedAt,
         latitude, longitude, radius, locationName, actionType, createdAt, updatedAt] = params || [];
