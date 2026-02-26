@@ -18,6 +18,7 @@ import { useMemos } from '../../src/contexts/MemoContext';
 import { useThemeColors, Spacing, FontSize, BorderRadius, getCardShadow } from '../../src/theme';
 import { MemoColor, MEMO_COLORS, Trigger } from '../../src/types/models';
 import { useColorScheme } from 'react-native';
+import { formatDate } from '../../src/utils/dateUtils';
 import MapViewComponent from '../../src/components/MapViewComponent';
 import { CalendarDatePicker } from '../../src/components/CalendarDatePicker';
 import { CountdownText } from '../../src/components/CountdownText';
@@ -220,6 +221,24 @@ export default function MemoEditScreen() {
             )}
 
             <ScrollView style={styles.scrollContent} keyboardDismissMode="on-drag">
+                {/* Dates */}
+                <View style={styles.dateHeader}>
+                    <View style={styles.dateItem}>
+                        <Ionicons name="add-circle-outline" size={12} color={colors.textTertiary} />
+                        <Text style={[styles.dateHeaderText, { color: colors.textTertiary }]}>
+                            作成: {formatDate(memo.createdAt)}
+                        </Text>
+                    </View>
+                    {memo.updatedAt !== memo.createdAt && (
+                        <View style={styles.dateItem}>
+                            <Ionicons name="pencil-outline" size={12} color={colors.textTertiary} />
+                            <Text style={[styles.dateHeaderText, { color: colors.textTertiary }]}>
+                                更新: {formatDate(memo.updatedAt)}
+                            </Text>
+                        </View>
+                    )}
+                </View>
+
                 {/* Title */}
                 <TextInput
                     style={[styles.titleInput, { color: colorScheme === 'dark' ? '#F5F5F7' : '#1A1A2E' }]}
@@ -436,6 +455,23 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         marginBottom: Spacing.md,
         lineHeight: 32,
+    },
+    dateHeader: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: Spacing.md,
+        marginBottom: Spacing.md,
+        marginTop: Spacing.sm,
+    },
+    dateItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    dateHeaderText: {
+        fontSize: 11,
+        fontWeight: '500',
+        opacity: 0.8,
     },
     contentInput: {
         fontSize: FontSize.md,

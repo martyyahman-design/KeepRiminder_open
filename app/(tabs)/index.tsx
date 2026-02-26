@@ -53,7 +53,7 @@ export default function MemoListScreen() {
         })
         .sort((a, b) => {
             if (filterType === 'all') {
-                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+                return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
             }
             return 0; // Default sorting for other filters (could be customized)
         });
@@ -164,9 +164,10 @@ export default function MemoListScreen() {
                 </Text>
             ) : null}
             {item.triggers.length > 0 && (
-                <View style={styles.triggerBadges}>
+                <View style={[styles.triggerBadges, { marginTop: Spacing.sm }]}>
+                    {/* Triggers */}
                     {item.triggers.map(trigger => (
-                        <View key={trigger.id} style={{ gap: 4 }}>
+                        <View key={trigger.id} style={styles.badgeWrapper}>
                             <View
                                 style={[
                                     styles.triggerBadge,
@@ -492,5 +493,8 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: '700',
         marginLeft: 2,
+    },
+    badgeWrapper: {
+        gap: 4,
     },
 });
