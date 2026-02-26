@@ -34,7 +34,16 @@ export const CalendarDatePicker: React.FC<CalendarDatePickerProps> = ({
         return new Date(now.getFullYear(), now.getMonth(), 1);
     });
 
-    const [selectedDate, setSelectedDate] = useState(initialDate || now.toISOString().split('T')[0]);
+    const getTodayStr = () => {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = (now.getMonth() + 1).toString().padStart(2, '0');
+        const d = now.getDate().toString().padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    };
+    const [selectedDate, setSelectedDate] = useState(initialDate || getTodayStr());
+
+    const getTodayDateStr = () => getTodayStr();
 
     const viewYear = viewDate.getFullYear();
     const viewMonth = viewDate.getMonth();
@@ -66,7 +75,7 @@ export const CalendarDatePicker: React.FC<CalendarDatePickerProps> = ({
         for (let d = 1; d <= daysInMonth; d++) {
             const dateStr = `${viewYear}-${(viewMonth + 1).toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`;
             const isSelected = selectedDate === dateStr;
-            const isToday = now.toISOString().split('T')[0] === dateStr;
+            const isToday = getTodayDateStr() === dateStr;
 
             days.push(
                 <TouchableOpacity

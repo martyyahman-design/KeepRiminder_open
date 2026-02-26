@@ -19,7 +19,9 @@ import { useMemos } from '../../src/contexts/MemoContext';
 import { useThemeColors, Spacing, FontSize, BorderRadius, getCardShadow } from '../../src/theme';
 import { MemoWithTriggers, MEMO_COLORS, MemoColor } from '../../src/types/models';
 import { CountdownText } from '../../src/components/CountdownText';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, Image } from 'react-native';
+import { useAuth } from '../../src/contexts/AuthContext';
+import { useSync } from '../../src/contexts/SyncContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_MARGIN = Spacing.sm;
@@ -27,6 +29,8 @@ const CARD_WIDTH = (SCREEN_WIDTH - Spacing.lg * 2 - CARD_MARGIN) / 2;
 
 export default function MemoListScreen() {
     const { memos, loading, createMemo, updateMemo, refreshMemos } = useMemos();
+    const { user, signIn, signOut, loading: authLoading } = useAuth();
+    const { isSyncing } = useSync();
     const colors = useThemeColors();
     const colorScheme = useColorScheme();
     const [searchQuery, setSearchQuery] = useState('');
@@ -90,12 +94,21 @@ export default function MemoListScreen() {
         }
     };
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const getTodayStr = () => {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = (now.getMonth() + 1).toString().padStart(2, '0');
+        const d = now.getDate().toString().padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    };
+
+    const todayStr = getTodayStr();
+
     const todayMemos = memos.filter(m => {
         if (m.isCompleted) return false;
-        if (m.todoType === 'deadline') {
-            // Deadline tasks for today or older (carry over if not completed)
-            return !m.todoDate || m.todoDate <= todayStr;
+        if (m.todoType === 'daily') return true;
+        if (m.todoType === 'deadline' && m.todoDate) {
+            return m.todoDate <= todayStr;
         }
         return false;
     });
@@ -222,22 +235,69 @@ export default function MemoListScreen() {
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
-            {/* Search Bar */}
-            <View style={[styles.searchContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Ionicons name="search" size={18} color={colors.textTertiary} />
-                <TextInput
-                    style={[styles.searchInput, { color: colors.text }]}
-                    placeholder="メモを検索..."
-                    placeholderTextColor={colors.textTertiary}
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                />
-                {searchQuery ? (
-                    <TouchableOpacity onPress={() => setSearchQuery('')}>
-                        <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
-                    </TouchableOpacity>
-                ) : null}
+            <View style={styles.header}>
+                <View style={[styles.searchContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <Ionicons name="search" size={18} color={colors.textTertiary} />
+                    <TextInput
+                        style={[styles.searchInput, { color: colors.text }]}
+                        placeholder="メモを検索..."
+                        placeholderTextColor={colors.textTertiary}
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                    />
+                    {searchQuery ? (
+                        <TouchableOpacity onPress={() => setSearchQuery('')}>
+                            <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+                        </TouchableOpacity>
+                    ) : null}
+                </View>
+
+                {/* Auth Button */}
+                <TouchableOpacity
+                    onPress={user ? signOut : signIn}
+                    disabled={authLoading}
+                    style={[
+                        styles.authBtn,
+                        { backgroundColor: colors.surface },
+                        getCardShadow(colors)
+                    ]}
+                >
+                    {authLoading ? (
+                        <Animated.View style={{ opacity: 0.5 }}>
+                            <Ionicons name="cloud-outline" size={24} color={colors.textTertiary} />
+                        </Animated.View>
+                    ) : user ? (
+                        user.photo ? (
+                            <Image source={{ uri: user.photo }} style={styles.userPhoto} />
+                        ) : (
+                            <View style={styles.userIconPlaceholder}>
+                                <Ionicons name="person-circle" size={32} color={colors.primary} />
+                                {isSyncing && <View style={[styles.syncBadge, { backgroundColor: colors.success }]} />}
+                            </View>
+                        )
+                    ) : (
+                        <Ionicons name="log-in-outline" size={24} color={colors.primary} />
+                    )}
+                </TouchableOpacity>
             </View>
+
+            {/* Login Warning Banner */}
+            {!user && !authLoading && (
+                <View style={[styles.warningBanner, { backgroundColor: colors.surface, borderColor: colors.warning + '40' }, getCardShadow(colors)]}>
+                    <View style={[styles.warningIconContainer, { backgroundColor: colors.warning + '15' }]}>
+                        <Ionicons name="cloud-offline" size={20} color={colors.warning} />
+                    </View>
+                    <View style={styles.warningContent}>
+                        <Text style={[styles.warningTitle, { color: colors.text }]}>同期オフ</Text>
+                        <Text style={[styles.warningText, { color: colors.textSecondary }]}>
+                            ログインすると Google Drive でデータを同期できます
+                        </Text>
+                    </View>
+                    <TouchableOpacity onPress={signIn} style={[styles.warningAction, { backgroundColor: colors.primary }]}>
+                        <Text style={styles.warningActionText}>ログイン</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
 
             {/* Filter Chips */}
             <View style={styles.filterContainer}>
@@ -340,17 +400,46 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
     },
-    searchContainer: {
+    header: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginHorizontal: Spacing.lg,
-        marginTop: Spacing.md,
-        marginBottom: Spacing.sm,
         paddingHorizontal: Spacing.lg,
-        paddingVertical: Spacing.md,
-        borderRadius: BorderRadius.full,
+        paddingTop: Spacing.md,
+        paddingBottom: Spacing.md,
+        gap: Spacing.md,
+    },
+    searchContainer: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: Spacing.md,
+        borderRadius: BorderRadius.md,
         borderWidth: 1,
-        gap: Spacing.sm,
+    },
+    authBtn: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    userPhoto: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+    },
+    userIconPlaceholder: {
+        position: 'relative',
+    },
+    syncBadge: {
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        borderWidth: 2,
+        borderColor: '#fff',
     },
     filterContainer: {
         marginBottom: Spacing.md,
@@ -493,6 +582,45 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: '700',
         marginLeft: 2,
+    },
+    warningBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginHorizontal: Spacing.lg,
+        padding: Spacing.md,
+        borderRadius: BorderRadius.lg,
+        borderWidth: 1,
+        gap: Spacing.md,
+        marginBottom: Spacing.lg,
+    },
+    warningIconContainer: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    warningContent: {
+        flex: 1,
+    },
+    warningTitle: {
+        fontSize: FontSize.sm,
+        fontWeight: '700',
+        marginBottom: 2,
+    },
+    warningText: {
+        fontSize: 11,
+        lineHeight: 14,
+    },
+    warningAction: {
+        paddingHorizontal: Spacing.md,
+        paddingVertical: 6,
+        borderRadius: BorderRadius.full,
+    },
+    warningActionText: {
+        color: '#fff',
+        fontSize: 11,
+        fontWeight: '700',
     },
     badgeWrapper: {
         gap: 4,

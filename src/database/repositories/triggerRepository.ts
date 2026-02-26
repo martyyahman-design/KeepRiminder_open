@@ -151,3 +151,34 @@ function rowToTrigger(row: any): Trigger {
         updatedAt: row.updatedAt,
     };
 }
+
+export async function upsertTrigger(trigger: Trigger): Promise<void> {
+    const db = await getDatabase();
+    const existing = await db.getFirstAsync('SELECT id FROM triggers WHERE id = ?', [trigger.id]);
+    if (existing) {
+        await db.runAsync(
+            `UPDATE triggers SET 
+            memoId = ?, type = ?, isActive = ?, scheduledAt = ?, durationSeconds = ?, 
+            startedAt = ?, latitude = ?, longitude = ?, radius = ?, locationName = ?, 
+            actionType = ?, updatedAt = ? 
+            WHERE id = ?`,
+            [
+                trigger.memoId, trigger.type, trigger.isActive ? 1 : 0, trigger.scheduledAt, trigger.durationSeconds,
+                trigger.startedAt, trigger.latitude, trigger.longitude, trigger.radius, trigger.locationName,
+                trigger.actionType, trigger.updatedAt, trigger.id
+            ]
+        );
+    } else {
+        await db.runAsync(
+            `INSERT INTO triggers (
+            id, memoId, type, isActive, scheduledAt, durationSeconds, startedAt,
+            latitude, longitude, radius, locationName, actionType, createdAt, updatedAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                trigger.id, trigger.memoId, trigger.type, trigger.isActive ? 1 : 0, trigger.scheduledAt,
+                trigger.durationSeconds, trigger.startedAt, trigger.latitude, trigger.longitude,
+                trigger.radius, trigger.locationName, trigger.actionType, trigger.createdAt, trigger.updatedAt
+            ]
+        );
+    }
+}

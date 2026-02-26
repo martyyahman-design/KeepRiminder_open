@@ -133,3 +133,32 @@ function rowToMemo(row: any): Memo {
         updatedAt: row.updatedAt,
     };
 }
+
+export async function upsertMemo(memo: Memo): Promise<void> {
+    const db = await getDatabase();
+    const existing = await db.getFirstAsync('SELECT id FROM memos WHERE id = ?', [memo.id]);
+    if (existing) {
+        // Need to pass individual fields or update updateMemo to take full Memo
+        await db.runAsync(
+            `UPDATE memos SET 
+            title = ?, content = ?, color = ?, isPinned = ?, todoType = ?, 
+            todoDate = ?, isCompleted = ?, completedAt = ?, updatedAt = ? 
+            WHERE id = ?`,
+            [
+                memo.title, memo.content, memo.color, memo.isPinned ? 1 : 0, memo.todoType,
+                memo.todoDate, memo.isCompleted ? 1 : 0, memo.completedAt, memo.updatedAt, memo.id
+            ]
+        );
+    } else {
+        await db.runAsync(
+            `INSERT INTO memos (
+            id, title, content, color, isPinned, todoType, todoDate, 
+            isCompleted, completedAt, createdAt, updatedAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                memo.id, memo.title, memo.content, memo.color, memo.isPinned ? 1 : 0, memo.todoType,
+                memo.todoDate, memo.isCompleted ? 1 : 0, memo.completedAt, memo.createdAt, memo.updatedAt
+            ]
+        );
+    }
+}
