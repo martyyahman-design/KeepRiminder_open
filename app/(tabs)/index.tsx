@@ -34,6 +34,7 @@ export default function MemoListScreen() {
     const colors = useThemeColors();
     const colorScheme = useColorScheme();
     const [searchQuery, setSearchQuery] = useState('');
+    const [isSearchVisible, setIsSearchVisible] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [filterType, setFilterType] = useState<'all' | 'todo' | 'datetime' | 'timer' | 'location'>('all');
 
@@ -176,48 +177,74 @@ export default function MemoListScreen() {
                     {item.content}
                 </Text>
             ) : null}
-            {item.triggers.length > 0 && (
-                <View style={[styles.triggerBadges, { marginTop: Spacing.sm }]}>
-                    {/* Triggers */}
-                    {item.triggers.map(trigger => (
+            {/* Trigger & ToDo Tags */}
+            <View style={[styles.triggerBadges, { marginTop: Spacing.sm }]}>
+                {/* ToDo Date Tag */}
+                {item.todoType !== 'none' && item.todoDate && (
+                    <View style={[styles.triggerBadge, { backgroundColor: '#2196F320', borderColor: '#2196F340', borderWidth: 1 }]}>
+                        <Ionicons name="checkbox-outline" size={12} color="#2196F3" />
+                        <Text style={[styles.triggerBadgeText, { color: '#2196F3', fontWeight: '600' }]}>
+                            {item.todoDate.split('-').slice(1).join('/')}
+                        </Text>
+                    </View>
+                )}
+
+                {/* Triggers Tags */}
+                {item.triggers.map(trigger => {
+                    let label = '';
+                    if (trigger.type === 'datetime' && trigger.scheduledAt) {
+                        const d = new Date(trigger.scheduledAt);
+                        label = `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
+                    } else if (trigger.type === 'timer') {
+                        label = 'タイマー';
+                    } else if (trigger.type === 'location_enter') {
+                        label = trigger.locationName || '到着';
+                    } else if (trigger.type === 'location_exit') {
+                        label = trigger.locationName || '出発';
+                    }
+
+                    const isNotifyType = trigger.type === 'datetime' || trigger.type === 'timer' || trigger.type.startsWith('location');
+                    const themeColor = isNotifyType ? '#FF9800' : colors.primary;
+
+                    return (
                         <View key={trigger.id} style={styles.badgeWrapper}>
                             <View
                                 style={[
                                     styles.triggerBadge,
                                     {
                                         backgroundColor: trigger.isActive
-                                            ? `${colors.primary}20`
+                                            ? `${themeColor}20`
                                             : `${colors.textTertiary}15`,
+                                        borderColor: trigger.isActive ? `${themeColor}40` : 'transparent',
+                                        borderWidth: trigger.isActive ? 1 : 0,
                                     },
                                 ]}
                             >
                                 <Ionicons
                                     name={getTriggerIcon(trigger.type) as any}
                                     size={11}
-                                    color={trigger.isActive ? colors.primary : colors.textTertiary}
+                                    color={trigger.isActive ? themeColor : colors.textTertiary}
                                 />
                                 <Text
                                     style={[
                                         styles.triggerBadgeText,
-                                        { color: trigger.isActive ? colors.primary : colors.textTertiary },
+                                        { color: trigger.isActive ? themeColor : colors.textTertiary, fontWeight: trigger.isActive ? '600' : '400' },
                                     ]}
                                 >
-                                    {trigger.type === 'datetime' ? '日時' :
-                                        trigger.type === 'timer' ? 'タイマー' :
-                                            trigger.type === 'location_enter' ? '入場' : '退場'}
+                                    {label}
                                 </Text>
                                 {trigger.type === 'timer' && trigger.isActive && (
                                     <CountdownText
                                         trigger={trigger}
-                                        style={[styles.countdownText, { color: colors.primary }]}
+                                        style={[styles.countdownText, { color: themeColor }]}
                                         hideIcon={true}
                                     />
                                 )}
                             </View>
                         </View>
-                    ))}
-                </View>
-            )}
+                    );
+                })}
+            </View>
         </TouchableOpacity>
     );
 
@@ -236,20 +263,11 @@ export default function MemoListScreen() {
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
             <View style={styles.header}>
-                <View style={[styles.searchContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    <Ionicons name="search" size={18} color={colors.textTertiary} />
-                    <TextInput
-                        style={[styles.searchInput, { color: colors.text }]}
-                        placeholder="メモを検索..."
-                        placeholderTextColor={colors.textTertiary}
-                        value={searchQuery}
-                        onChangeText={setSearchQuery}
-                    />
-                    {searchQuery ? (
-                        <TouchableOpacity onPress={() => setSearchQuery('')}>
-                            <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
-                        </TouchableOpacity>
-                    ) : null}
+                <View style={styles.headerLeft}>
+                    <View style={[styles.logoContainer, { backgroundColor: colors.primary + '15' }]}>
+                        <Ionicons name="notifications" size={22} color={colors.primary} />
+                    </View>
+                    <Text style={[styles.headerTitle, { color: colors.text }]}>KeepReminder</Text>
                 </View>
 
                 {/* Auth Button */}
@@ -263,9 +281,9 @@ export default function MemoListScreen() {
                     ]}
                 >
                     {authLoading ? (
-                        <Animated.View style={{ opacity: 0.5 }}>
+                        <View style={{ opacity: 0.5 }}>
                             <Ionicons name="cloud-outline" size={24} color={colors.textTertiary} />
-                        </Animated.View>
+                        </View>
                     ) : user ? (
                         user.photo ? (
                             <Image source={{ uri: user.photo }} style={styles.userPhoto} />
@@ -299,46 +317,6 @@ export default function MemoListScreen() {
                 </View>
             )}
 
-            {/* Filter Chips */}
-            <View style={styles.filterContainer}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
-                    <TouchableOpacity
-                        style={[styles.filterChip, filterType === 'all' && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
-                        onPress={() => setFilterType('all')}
-                    >
-                        <Text style={[styles.filterText, { color: filterType === 'all' ? colors.primary : colors.textSecondary }]}>すべて</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.filterChip, filterType === 'todo' && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
-                        onPress={() => setFilterType('todo')}
-                    >
-                        <Ionicons name="checkmark-circle-outline" size={14} color={filterType === 'todo' ? colors.primary : colors.textSecondary} />
-                        <Text style={[styles.filterText, { color: filterType === 'todo' ? colors.primary : colors.textSecondary }]}>TODO</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.filterChip, filterType === 'datetime' && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
-                        onPress={() => setFilterType('datetime')}
-                    >
-                        <Ionicons name="calendar" size={14} color={filterType === 'datetime' ? colors.primary : colors.textSecondary} />
-                        <Text style={[styles.filterText, { color: filterType === 'datetime' ? colors.primary : colors.textSecondary }]}>日時</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.filterChip, filterType === 'timer' && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
-                        onPress={() => setFilterType('timer')}
-                    >
-                        <Ionicons name="timer" size={14} color={filterType === 'timer' ? colors.primary : colors.textSecondary} />
-                        <Text style={[styles.filterText, { color: filterType === 'timer' ? colors.primary : colors.textSecondary }]}>タイマー</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.filterChip, filterType === 'location' && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
-                        onPress={() => setFilterType('location')}
-                    >
-                        <Ionicons name="location" size={14} color={filterType === 'location' ? colors.primary : colors.textSecondary} />
-                        <Text style={[styles.filterText, { color: filterType === 'location' ? colors.primary : colors.textSecondary }]}>エリア</Text>
-                    </TouchableOpacity>
-                </ScrollView>
-            </View>
-
             {/* Memo Grid */}
             <FlatList
                 data={filteredMemos}
@@ -350,27 +328,103 @@ export default function MemoListScreen() {
                     styles.listContent,
                     filteredMemos.length === 0 && todayMemos.length === 0 && styles.listEmpty,
                 ]}
-                ListHeaderComponent={todayMemos.length > 0 ? (
-                    <View style={styles.todaySection}>
-                        <Text style={[styles.sectionTitle, { color: colors.text }]}>今日のタスク</Text>
-                        {todayMemos.map(m => (
+                ListHeaderComponent={(todayMemos.length > 0 || filteredMemos.length > 0) ? (
+                    <View>
+                        {todayMemos.length > 0 && (
+                            <View style={[styles.todaySection, { backgroundColor: colors.surface + '80', borderColor: colors.border }]}>
+                                <View style={styles.sectionHeader}>
+                                    <Ionicons name="today" size={18} color={colors.primary} />
+                                    <Text style={[styles.sectionTitle, { color: colors.text }]}>今日のToDo</Text>
+                                    <View style={[styles.badge, { backgroundColor: colors.primary }]}>
+                                        <Text style={styles.badgeText}>{todayMemos.length}</Text>
+                                    </View>
+                                </View>
+                                {todayMemos.map(m => (
+                                    <TouchableOpacity
+                                        key={m.id}
+                                        style={[styles.todayItem, { backgroundColor: getCardColor(m.color), ...getCardShadow(colors) }]}
+                                        onPress={() => router.push(`/memo/${m.id}`)}
+                                    >
+                                        <Pressable
+                                            onPress={(e: GestureResponderEvent) => {
+                                                e.stopPropagation();
+                                                handleToggleTodo(m);
+                                            }}
+                                            hitSlop={8}
+                                        >
+                                            <Ionicons name="ellipse-outline" size={24} color={colors.primary} />
+                                        </Pressable>
+                                        <Text style={[styles.todayItemText, { color: colors.text }]}>{m.title || '(無題)'}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        )}
+
+                        {/* 2. メモ一覧セクション: 見出しとフィルター */}
+                        <View style={styles.listSectionHeader}>
+                            <Text style={[styles.listSectionTitle, { color: colors.textSecondary }]}>メモ一覧</Text>
+                            <View style={[styles.line, { backgroundColor: colors.border }]} />
+                        </View>
+
+                        <View style={styles.filterContainerResponsive}>
                             <TouchableOpacity
-                                key={m.id}
-                                style={[styles.todayItem, { backgroundColor: getCardColor(m.color), ...getCardShadow(colors) }]}
-                                onPress={() => router.push(`/memo/${m.id}`)}
+                                activeOpacity={0.7}
+                                style={[
+                                    styles.searchIconOnlyChip,
+                                    { backgroundColor: isSearchVisible ? colors.primary + '20' : colors.surface, borderColor: isSearchVisible ? colors.primary : colors.border }
+                                ]}
+                                onPress={() => setIsSearchVisible(!isSearchVisible)}
                             >
-                                <Pressable
-                                    onPress={(e: GestureResponderEvent) => {
-                                        e.stopPropagation();
-                                        handleToggleTodo(m);
-                                    }}
-                                    hitSlop={8}
-                                >
-                                    <Ionicons name="ellipse-outline" size={24} color={colors.primary} />
-                                </Pressable>
-                                <Text style={[styles.todayItemText, { color: colors.text }]}>{m.title || '(無題)'}</Text>
+                                <Ionicons name="search" size={18} color={isSearchVisible ? colors.primary : colors.textSecondary} />
                             </TouchableOpacity>
-                        ))}
+
+                            <View style={[styles.filterDivider, { backgroundColor: colors.border }]} />
+
+                            {(['all', 'todo', 'datetime', 'timer', 'location'] as const).map((type) => (
+                                <TouchableOpacity
+                                    key={type}
+                                    activeOpacity={0.7}
+                                    style={[
+                                        styles.filterChipInside,
+                                        filterType === type && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }
+                                    ]}
+                                    onPress={() => setFilterType(type)}
+                                >
+                                    {type === 'todo' && <Ionicons name="checkmark-circle-outline" size={14} color={filterType === type ? colors.primary : colors.textSecondary} />}
+                                    {type === 'datetime' && <Ionicons name="calendar-outline" size={14} color={filterType === type ? colors.primary : colors.textSecondary} />}
+                                    {type === 'timer' && <Ionicons name="time-outline" size={14} color={filterType === type ? colors.primary : colors.textSecondary} />}
+                                    {type === 'location' && <Ionicons name="location-outline" size={14} color={filterType === type ? colors.primary : colors.textSecondary} />}
+                                    <Text style={[
+                                        styles.filterText,
+                                        { color: filterType === type ? colors.primary : colors.textSecondary }
+                                    ]}>
+                                        {type === 'all' ? 'すべて' :
+                                            type === 'todo' ? 'TODO' :
+                                                type === 'datetime' ? '日時' :
+                                                    type === 'timer' ? 'タイマー' : 'エリア'}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        {isSearchVisible && (
+                            <View style={styles.searchRowInside}>
+                                <Ionicons name="search" size={18} color={colors.textSecondary} style={styles.searchIconInside} />
+                                <TextInput
+                                    style={[styles.searchInputInside, { color: colors.text }]}
+                                    placeholder="メモを検索..."
+                                    placeholderTextColor={colors.textSecondary}
+                                    value={searchQuery}
+                                    onChangeText={setSearchQuery}
+                                    autoFocus
+                                />
+                                {searchQuery.length > 0 && (
+                                    <TouchableOpacity onPress={() => setSearchQuery('')}>
+                                        <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        )}
                     </View>
                 ) : null}
                 ListEmptyComponent={!loading ? renderEmptyState : null}
@@ -403,16 +457,37 @@ const styles = StyleSheet.create({
     header: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'space-between',
         paddingHorizontal: Spacing.lg,
-        paddingTop: Spacing.md,
+        paddingTop: Spacing.xl,
         paddingBottom: Spacing.md,
-        gap: Spacing.md,
+    },
+    headerLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.sm,
+    },
+    logoContainer: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    headerTitle: {
+        fontSize: FontSize.xl,
+        fontWeight: '800',
+        letterSpacing: -0.5,
+    },
+    searchRow: {
+        paddingHorizontal: Spacing.lg,
+        paddingBottom: Spacing.md,
     },
     searchContainer: {
-        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: Spacing.md,
+        height: 44,
         borderRadius: BorderRadius.md,
         borderWidth: 1,
     },
@@ -441,28 +516,58 @@ const styles = StyleSheet.create({
         borderWidth: 2,
         borderColor: '#fff',
     },
-    filterContainer: {
-        marginBottom: Spacing.md,
-    },
-    filterScroll: {
+    filterContainerResponsive: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
         paddingHorizontal: Spacing.lg,
         gap: Spacing.sm,
+        marginBottom: Spacing.lg,
+        marginTop: -Spacing.sm,
     },
-    filterChip: {
+    filterChipInside: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: Spacing.md,
+        paddingHorizontal: 10,
         paddingVertical: 6,
         borderRadius: BorderRadius.full,
         borderWidth: 1,
         borderColor: 'rgba(128, 128, 128, 0.2)',
-        gap: 6,
+        gap: 4,
+    },
+    searchIconOnlyChip: {
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
     },
     filterText: {
-        fontSize: FontSize.sm,
-        fontWeight: '600',
+        fontSize: FontSize.xs,
+        fontWeight: '700',
     },
-    searchInput: {
+    filterDivider: {
+        width: 1,
+        height: 24,
+        alignSelf: 'center',
+        marginHorizontal: 2,
+        opacity: 0.1,
+    },
+    searchRowInside: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginHorizontal: Spacing.lg,
+        marginBottom: Spacing.lg,
+        paddingHorizontal: Spacing.md,
+        paddingVertical: 10,
+        borderRadius: BorderRadius.md,
+        backgroundColor: 'rgba(128, 128, 128, 0.05)',
+        gap: Spacing.sm,
+    },
+    searchIconInside: {
+        opacity: 0.5,
+    },
+    searchInputInside: {
         flex: 1,
         fontSize: FontSize.md,
         padding: 0,
@@ -557,13 +662,48 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     todaySection: {
-        marginBottom: Spacing.xl,
+        marginBottom: Spacing.xxl,
         marginTop: Spacing.sm,
+        padding: Spacing.md,
+        borderRadius: BorderRadius.lg,
+        borderWidth: 1,
+    },
+    sectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.sm,
+        marginBottom: Spacing.md,
     },
     sectionTitle: {
         fontSize: FontSize.lg,
+        fontWeight: '800',
+    },
+    badge: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: BorderRadius.full,
+    },
+    badgeText: {
+        color: '#fff',
+        fontSize: 10,
+        fontWeight: '800',
+    },
+    listSectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.md,
+        marginBottom: Spacing.lg,
+    },
+    listSectionTitle: {
+        fontSize: FontSize.sm,
         fontWeight: '700',
-        marginBottom: Spacing.md,
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+    },
+    line: {
+        flex: 1,
+        height: 1,
+        opacity: 0.5,
     },
     todayItem: {
         flexDirection: 'row',

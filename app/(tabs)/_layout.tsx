@@ -15,8 +15,8 @@ export default function TabLayout() {
                 tabBarStyle: {
                     backgroundColor: colors.surface,
                     borderTopColor: colors.border,
-                    height: Platform.OS === 'ios' ? 88 : 60,
-                    paddingBottom: Platform.OS === 'ios' ? 30 : 10,
+                    height: Platform.OS === 'web' ? 70 : (Platform.OS === 'ios' ? 88 : 65),
+                    paddingBottom: Platform.OS === 'web' ? 15 : (Platform.OS === 'ios' ? 30 : 12),
                 },
                 tabBarLabelStyle: {
                     fontSize: 11,
@@ -32,6 +32,7 @@ export default function TabLayout() {
             <Tabs.Screen
                 name="index"
                 options={{
+                    headerShown: false,
                     title: 'メモ',
                     tabBarIcon: ({ color, size }) => (
                         <Ionicons name="documents" size={size} color={color} />
