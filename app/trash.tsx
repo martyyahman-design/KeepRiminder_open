@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Platform, useColorScheme } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useMemos } from '../src/contexts/MemoContext';
@@ -9,12 +9,20 @@ import { MEMO_COLORS } from '../src/types/models';
 export default function TrashScreen() {
     const { deletedMemos, restoreMemo, permanentlyDeleteMemo, emptyTrash, loading } = useMemos();
     const colors = useThemeColors();
+    const colorScheme = useColorScheme();
 
     const handleRestore = (id: string) => {
         restoreMemo(id);
     };
 
     const handleDelete = (id: string) => {
+        if (Platform.OS === 'web') {
+            if (window.confirm('このメモを完全に削除しますか？\nこの操作は取り消せません。')) {
+                permanentlyDeleteMemo(id);
+            }
+            return;
+        }
+
         Alert.alert(
             'メモを完全に削除',
             'この操作は取り消せません。本当に削除しますか？',
@@ -27,6 +35,14 @@ export default function TrashScreen() {
 
     const handleEmptyTrash = () => {
         if (deletedMemos.length === 0) return;
+
+        if (Platform.OS === 'web') {
+            if (window.confirm('ごみ箱を空にしますか？\nごみ箱内のすべてのメモを完全に削除します。この操作は取り消せません。')) {
+                emptyTrash();
+            }
+            return;
+        }
+
         Alert.alert(
             'ごみ箱を空にする',
             'ごみ箱内のすべてのメモを完全に削除します。この操作は取り消せません。',
@@ -77,7 +93,7 @@ export default function TrashScreen() {
                         style={[
                             styles.memoCard,
                             {
-                                backgroundColor: Platform.OS === 'dark'
+                                backgroundColor: colorScheme === 'dark'
                                     ? MEMO_COLORS[item.color].bgDark
                                     : MEMO_COLORS[item.color].bg,
                                 ...getCardShadow(colors)
