@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     View,
     Text,
@@ -43,13 +43,33 @@ export default function MemoEditScreen() {
     const [selection, setSelection] = useState({ start: 0, end: 0 });
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [showDatePicker, setShowDatePicker] = useState(false);
+    const inputRefs = useRef<{ [key: string]: any }>({});
+
+    // Sync heights on Web to prevent 100px default height gap
+    useEffect(() => {
+        if (Platform.OS === 'web') {
+            blocks.forEach(block => {
+                if (block.type === 'text' && inputRefs.current[block.id]) {
+                    const el = inputRefs.current[block.id];
+                    el.style.height = 'auto';
+                    el.style.height = (el.scrollHeight) + 'px';
+                }
+            });
+        }
+    }, [blocks]);
 
     useEffect(() => {
         if (memo) {
             setTitle(memo.title);
-            setContent(memo.content);
+            // The original memo.content was a plain string.
+            // The new structure expects memo.blocks to be the source of truth for blocks.
+            // If memo.content is now expected to be JSON for blocks, this line needs adjustment.
+            // Based on the user's instruction, the `setBlocks` part is changed.
+            // Keeping `setContent` for backward compatibility if `memo.content` is still used elsewhere as a plain string.
+            setContent(memo.content); // Keep this if memo.content is still a plain string summary
+            const initialBlocks: ContentBlock[] = memo.blocks && memo.blocks.length > 0 ? memo.blocks : [{ id: `text-${Date.now()}`, type: 'text', content: '' }];
+            setBlocks(initialBlocks);
             setColor(memo.color);
-            setBlocks(memo.blocks);
         }
     }, [memo?.id]);
 
@@ -209,16 +229,47 @@ export default function MemoEditScreen() {
     };
 
     const handleUpdateBlock = (blockId: string, value: string) => {
-        setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, content: value } : b));
+        setBlocks(prev => {
+            const index = prev.findIndex(b => b.id === blockId);
+            if (index === -1) return prev;
+
+            // Handle backspace at the beginning of a block to merge with previous text block
+            if (index > 0 && value.length < prev[index].content.length && selection.start === 0 && selection.end === 0) {
+                const prevBlock = prev[index - 1];
+                if (prevBlock.type === 'text') {
+                    const newBlocks = [...prev];
+                    const mergedContent = prevBlock.content + value;
+                    newBlocks[index - 1] = { ...prevBlock, content: mergedContent };
+                    newBlocks.splice(index, 1);
+                    return newBlocks;
+                }
+            }
+
+            return prev.map(b => b.id === blockId ? { ...b, content: value } : b);
+        });
+
+        // Sync height on Web
+        if (Platform.OS === 'web' && inputRefs.current[blockId]) {
+            const el = inputRefs.current[blockId];
+            el.style.height = 'auto';
+            el.style.height = (el.scrollHeight) + 'px';
+        }
     };
 
     const handleDeleteBlock = (blockId: string) => {
-        // Don't delete if it's the only block? No, images can be deleted.
-        // But if multiple text blocks exist and one is empty, we might want to merge.
-        // Simplified: just filter.
         setBlocks(prev => {
             const result = prev.filter(b => b.id !== blockId);
-            return result.length > 0 ? result : [{ id: Date.now().toString(), type: 'text', content: '' }];
+            // After deleting a block, if we have adjacent text blocks, merge them
+            const merged: ContentBlock[] = [];
+            for (const block of result) {
+                const last = merged[merged.length - 1];
+                if (last && last.type === 'text' && block.type === 'text') {
+                    last.content += (last.content ? '\n' : '') + block.content;
+                } else {
+                    merged.push({ ...block });
+                }
+            }
+            return merged.length > 0 ? merged : [{ id: Date.now().toString(), type: 'text', content: '' }];
         });
     };
 
@@ -325,7 +376,11 @@ export default function MemoEditScreen() {
                 </ScrollView>
             )}
 
-            <ScrollView style={styles.scrollContent} keyboardDismissMode="on-drag">
+            <ScrollView
+                style={styles.scrollContent}
+                contentContainerStyle={styles.scrollContentContainer}
+                keyboardDismissMode="on-drag"
+            >
                 {/* Dates */}
                 <View style={styles.dateHeader}>
                     <View style={styles.dateItem}>
@@ -355,28 +410,60 @@ export default function MemoEditScreen() {
                 />
 
                 {/* Blocks Editor */}
-                {blocks.map((block, index) => (
-                    <React.Fragment key={block.id}>
-                        <View style={styles.blockContainer}>
+                <View style={styles.editorContainer}>
+                    {blocks.map((block, index) => (
+                        <View key={block.id} style={styles.blockWrapper}>
                             {block.type === 'text' ? (
-                                <TextInput
-                                    style={[styles.contentInput, { color: colorScheme === 'dark' ? '#D1D5DB' : '#374151' }]}
-                                    placeholder="メモを入力..."
-                                    placeholderTextColor={colorScheme === 'dark' ? '#6B7280' : '#9CA3AF'}
-                                    value={block.content}
-                                    onChangeText={(text) => handleUpdateBlock(block.id, text)}
-                                    onFocus={() => setActiveBlockId(block.id)}
-                                    onSelectionChange={(e) => {
-                                        if (activeBlockId === block.id) {
-                                            setSelection(e.nativeEvent.selection);
-                                        }
-                                    }}
-                                    multiline
-                                    scrollEnabled={false}
-                                />
+                                <View style={styles.textBlockWrapper}>
+                                    <TextInput
+                                        ref={(ref) => {
+                                            if (ref) {
+                                                // @ts-ignore: Access native element for height sync
+                                                inputRefs.current[block.id] = Platform.OS === 'web' ? (ref as any).setNativeProps ? ref : ref : ref;
+                                                // Handle the case where ref is actually the DOM element or has it
+                                            }
+                                        }}
+                                        style={[
+                                            styles.contentInput,
+                                            {
+                                                color: colorScheme === 'dark' ? '#D1D5DB' : '#374151',
+                                                ...(Platform.OS === 'web' ? ({
+                                                    outlineWidth: 0,
+                                                    outlineStyle: 'none',
+                                                    boxShadow: 'none',
+                                                    borderWidth: 0,
+                                                } as any) : {}),
+                                            }
+                                        ]}
+                                        placeholder={index === 0 ? "メモを入力..." : ""}
+                                        placeholderTextColor={colorScheme === 'dark' ? '#6B7280' : '#9CA3AF'}
+                                        value={block.content}
+                                        onChangeText={(text) => handleUpdateBlock(block.id, text)}
+                                        onFocus={() => setActiveBlockId(block.id)}
+                                        onSelectionChange={(e) => {
+                                            if (activeBlockId === block.id) {
+                                                setSelection(e.nativeEvent.selection);
+                                            }
+                                        }}
+                                        onContentSizeChange={(e) => {
+                                            if (Platform.OS === 'web' && inputRefs.current[block.id]) {
+                                                const el = inputRefs.current[block.id];
+                                                el.style.height = 'auto';
+                                                el.style.height = (el.scrollHeight) + 'px';
+                                            }
+                                        }}
+                                        multiline={true}
+                                        numberOfLines={1}
+                                        {...(Platform.OS === 'web' ? { rows: 1 } : {})}
+                                        scrollEnabled={false}
+                                        textAlignVertical="top"
+                                        blurOnSubmit={false}
+                                        selectionColor={colors.primary}
+                                    />
+                                </View>
                             ) : (
                                 <View style={styles.imageBlockContainer}>
-                                    <Image source={{ uri: block.content }} style={styles.imageBlock} resizeMode="cover" />
+                                    <Image source={{ uri: block.content }} style={styles.imageBlock} resizeMode="contain" />
                                     <TouchableOpacity
                                         style={styles.deleteBlockBtn}
                                         onPress={() => handleDeleteBlock(block.id)}
@@ -386,33 +473,15 @@ export default function MemoEditScreen() {
                                 </View>
                             )}
                         </View>
-
-                        {/* Inline Add Button between blocks */}
-                        <View style={styles.inlineAddBtn}>
-                            <View style={[styles.inlineAddLine, { backgroundColor: colors.border }]} />
-                            <TouchableOpacity
-                                style={[styles.inlineAddAction, { backgroundColor: colors.background, borderColor: colors.border }]}
-                                onPress={() => handleAddTextBlock(block.id)}
-                            >
-                                <Ionicons name="text" size={12} color={colors.textTertiary} />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.inlineAddAction, { backgroundColor: colors.background, borderColor: colors.border }]}
-                                onPress={() => handleAddImage(index + 1)}
-                            >
-                                <Ionicons name="image" size={12} color={colors.textTertiary} />
-                            </TouchableOpacity>
-                            <View style={[styles.inlineAddLine, { backgroundColor: colors.border }]} />
-                        </View>
-                    </React.Fragment>
-                ))}
+                    ))}
+                </View>
 
                 <TouchableOpacity
-                    style={[styles.addImageBtn, { borderColor: colors.primary + '30', backgroundColor: colors.primary + '05' }]}
+                    style={[styles.addImageBtn, { borderColor: colors.primary + '20' }]}
                     onPress={() => handleAddImage()}
                 >
                     <Ionicons name="image-outline" size={20} color={colors.primary} />
-                    <Text style={[styles.addImageText, { color: colors.primary }]}>画像を末尾に追加</Text>
+                    <Text style={[styles.addImageText, { color: colors.primary }]}>画像を挿入</Text>
                 </TouchableOpacity>
 
                 {/* TODO Settings */}
@@ -568,21 +637,6 @@ export default function MemoEditScreen() {
                     </View>
                 )}
             </ScrollView>
-
-            {/* Floating Editor Toolbar (Visible when text is focused) */}
-            {activeBlockId && (
-                <View style={[styles.editorToolbar, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
-                    <TouchableOpacity style={styles.toolbarItem} onPress={() => handleAddImage()}>
-                        <Ionicons name="image" size={24} color={colors.primary} />
-                        <Text style={[styles.toolbarText, { color: colors.primary }]}>現在地に挿入</Text>
-                    </TouchableOpacity>
-                    <View style={styles.toolbarSeparator} />
-                    <TouchableOpacity style={styles.toolbarItem} onPress={() => setActiveBlockId(null)}>
-                        <Ionicons name="checkmark" size={24} color={colors.textSecondary} />
-                        <Text style={[styles.toolbarText, { color: colors.textSecondary }]}>完了</Text>
-                    </TouchableOpacity>
-                </View>
-            )}
         </KeyboardAvoidingView>
     );
 }
@@ -627,7 +681,10 @@ const styles = StyleSheet.create({
     },
     scrollContent: {
         flex: 1,
-        paddingHorizontal: Spacing.xl,
+        paddingHorizontal: Spacing.lg,
+    },
+    scrollContentContainer: {
+        paddingBottom: 80, // Adjusted padding
     },
     titleInput: {
         fontSize: FontSize.xxl,
@@ -638,110 +695,55 @@ const styles = StyleSheet.create({
     contentInput: {
         fontSize: FontSize.md,
         lineHeight: 24,
-        paddingHorizontal: Spacing.lg,
-        paddingBottom: Spacing.md,
-        minHeight: 40,
+        paddingHorizontal: 0,
+        paddingTop: 2,
+        paddingBottom: 2,
+        minHeight: 24,
         textAlignVertical: 'top',
+        borderWidth: 0,
+        backgroundColor: 'transparent',
     },
-    blockContainer: {
-        marginBottom: Spacing.xs,
+    textBlockWrapper: {
+        paddingVertical: 0,
+        borderWidth: 0,
+    },
+    editorContainer: {
+        marginBottom: 0, // Eliminated margin
+    },
+    blockWrapper: {
+        marginBottom: 0,
     },
     imageBlockContainer: {
-        marginHorizontal: Spacing.lg,
-        marginVertical: Spacing.sm,
+        marginVertical: 0, // Eliminated margin
         position: 'relative',
+        alignItems: 'center',
     },
     imageBlock: {
         width: '100%',
-        aspectRatio: 4 / 3,
+        aspectRatio: 16 / 9,
         borderRadius: BorderRadius.md,
     },
     deleteBlockBtn: {
         position: 'absolute',
-        top: -10,
-        right: -10,
-        backgroundColor: 'white',
+        top: 4,
+        right: 4,
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
         borderRadius: 12,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.2,
-        shadowRadius: 2,
     },
     addImageBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        marginHorizontal: Spacing.lg,
-        marginVertical: Spacing.md,
-        paddingVertical: Spacing.sm,
-        borderWidth: 1,
+        paddingVertical: Spacing.sm, // Reduced from md
+        borderTopWidth: 1,
+        borderBottomWidth: 1,
         borderStyle: 'dashed',
-        borderRadius: BorderRadius.md,
         gap: Spacing.sm,
+        justifyContent: 'center',
+        marginBottom: Spacing.md, // Reduced from xl
     },
     addImageText: {
         fontSize: FontSize.sm,
         fontWeight: '600',
-    },
-    inlineAddBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginVertical: Spacing.xs,
-        paddingHorizontal: Spacing.xl,
-        height: 20,
-        opacity: 0.3,
-    },
-    inlineAddLine: {
-        flex: 1,
-        height: 1,
-    },
-    inlineAddCircle: {
-        width: 18,
-        height: 18,
-        borderRadius: 9,
-        borderWidth: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginHorizontal: Spacing.sm,
-    },
-    inlineAddAction: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        borderWidth: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginHorizontal: 4,
-    },
-    editorToolbar: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: Spacing.lg,
-        paddingVertical: Spacing.sm,
-        borderTopWidth: 1,
-        elevation: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-    },
-    toolbarItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: Spacing.sm,
-        paddingVertical: Spacing.xs,
-        paddingHorizontal: Spacing.md,
-    },
-    toolbarText: {
-        fontSize: FontSize.sm,
-        fontWeight: '600',
-    },
-    toolbarSeparator: {
-        width: 1,
-        height: 20,
-        backgroundColor: 'rgba(128, 128, 128, 0.2)',
-        marginHorizontal: Spacing.sm,
     },
     dateHeader: {
         flexDirection: 'row',
