@@ -21,6 +21,7 @@ export interface Memo {
 
     createdAt: string;
     updatedAt: string;
+    tag: 'work' | 'private';
 }
 
 export type MemoColor =

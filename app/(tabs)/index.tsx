@@ -13,6 +13,7 @@ import {
     Pressable,
     GestureResponderEvent,
     Modal,
+    Alert,
     Platform,
     Image,
     useColorScheme,
@@ -31,7 +32,7 @@ const CARD_MARGIN = Spacing.sm;
 const CARD_WIDTH = (SCREEN_WIDTH - Spacing.lg * 2 - CARD_MARGIN) / 2;
 
 export default function MemoListScreen() {
-    const { memos, loading, createMemo, updateMemo, refreshMemos } = useMemos();
+    const { memos, loading, createMemo, updateMemo, deleteMemo, refreshMemos } = useMemos();
     const { user, signIn, signOut, loading: authLoading } = useAuth();
     const { isSyncing } = useSync();
     const colors = useThemeColors();
@@ -39,8 +40,11 @@ export default function MemoListScreen() {
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearchVisible, setIsSearchVisible] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
-    const [filterType, setFilterType] = useState<'all' | 'todo' | 'datetime' | 'timer' | 'location'>('all');
+    const [filterType, setFilterType] = useState<'all' | 'todo' | 'datetime' | 'timer' | 'location' | 'tag'>('all');
+    const [tagFilter, setTagFilter] = useState<'work' | 'private' | null>(null);
     const [isAccountMenuVisible, setIsAccountMenuVisible] = useState(false);
+    const [selectionMode, setSelectionMode] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
     const filteredMemos = memos
         .filter(m => {
@@ -57,6 +61,7 @@ export default function MemoListScreen() {
             if (filterType === 'datetime') return m.triggers.some(t => t.type === 'datetime');
             if (filterType === 'timer') return m.triggers.some(t => t.type === 'timer');
             if (filterType === 'location') return m.triggers.some(t => t.type === 'location_enter' || t.type === 'location_exit');
+            if (filterType === 'tag') return tagFilter ? m.tag === tagFilter : true;
 
             return true;
         })
@@ -64,8 +69,45 @@ export default function MemoListScreen() {
             if (filterType === 'all') {
                 return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
             }
-            return 0; // Default sorting for other filters
+            return 0;
         });
+
+    const handleDeleteMemo = useCallback(async (id: string) => {
+        await deleteMemo(id);
+    }, [deleteMemo]);
+
+    const handleBulkDelete = useCallback(async () => {
+        if (selectedIds.size === 0) return;
+        Alert.alert(
+            `${selectedIds.size}件のメモを削除`,
+            'ごみ箱に移動しますか？',
+            [
+                { text: 'キャンセル', style: 'cancel' },
+                {
+                    text: 'ごみ箱に移動',
+                    style: 'destructive',
+                    onPress: async () => {
+                        await Promise.all(Array.from(selectedIds).map(id => deleteMemo(id)));
+                        setSelectedIds(new Set());
+                        setSelectionMode(false);
+                    }
+                },
+            ]
+        );
+    }, [selectedIds, deleteMemo]);
+
+    const toggleSelect = useCallback((id: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    }, []);
+
+    const exitSelectionMode = useCallback(() => {
+        setSelectionMode(false);
+        setSelectedIds(new Set());
+    }, []);
 
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
@@ -118,139 +160,160 @@ export default function MemoListScreen() {
         return false;
     });
 
-    const renderMemoCard = ({ item }: { item: MemoWithTriggers }) => (
-        <TouchableOpacity
-            style={[
-                styles.card,
-                {
-                    backgroundColor: getCardColor(item.color),
-                    borderColor: item.color === 'default' ? colors.border : 'transparent',
-                    borderWidth: item.color === 'default' ? 1 : 0,
-                    ...getCardShadow(colors),
-                },
-            ]}
-            onPress={() => router.push(`/memo/${item.id}`)}
-            activeOpacity={0.7}
-        >
-            {item.isPinned && (
-                <View style={styles.pinBadge}>
-                    <Ionicons name="pin" size={12} color={colors.primary} />
-                </View>
-            )}
-            {item.title ? (
-                <View style={styles.cardHeader}>
-                    {item.todoType !== 'none' && (
-                        <Pressable
-                            onPress={(e: GestureResponderEvent) => {
-                                e.stopPropagation();
-                                const isCompleted = !item.isCompleted;
-                                const completedAt = isCompleted ? new Date().toISOString() : null;
-                                updateMemo(item.id, { isCompleted, completedAt });
-                            }}
-                            style={styles.checkbox}
-                            hitSlop={8}
-                        >
-                            <Ionicons
-                                name={item.isCompleted ? "checkbox" : "square-outline"}
-                                size={20}
-                                color={item.isCompleted ? colors.primary : colors.textTertiary}
-                            />
-                        </Pressable>
-                    )}
-                    <Text
-                        style={[
-                            styles.cardTitle,
-                            { color: colorScheme === 'dark' ? '#F5F5F7' : '#1A1A2E' },
-                            item.isCompleted && styles.completedText
-                        ]}
-                        numberOfLines={2}
-                    >
-                        {item.title}
-                    </Text>
-                </View>
-            ) : null}
-            {item.content ? (
-                <Text
-                    style={[
-                        styles.cardContent,
-                        { color: colorScheme === 'dark' ? '#D1D5DB' : '#4B5563' },
-                        item.isCompleted && styles.completedText
-                    ]}
-                    numberOfLines={6}
-                >
-                    {item.content}
-                </Text>
-            ) : null}
-            {/* Trigger & ToDo Tags */}
-            <View style={[styles.triggerBadges, { marginTop: Spacing.sm }]}>
-                {/* ToDo Date Tag */}
-                {item.todoType !== 'none' && item.todoDate && (
-                    <View style={[styles.triggerBadge, { backgroundColor: '#2196F320', borderColor: '#2196F340', borderWidth: 1 }]}>
-                        <Ionicons name="checkbox-outline" size={12} color="#2196F3" />
-                        <Text style={[styles.triggerBadgeText, { color: '#2196F3', fontWeight: '600' }]}>
-                            {item.todoDate.split('-').slice(1).join('/')}
-                        </Text>
+    const renderMemoCard = ({ item }: { item: MemoWithTriggers }) => {
+        const isSelected = selectedIds.has(item.id);
+        return (
+            <TouchableOpacity
+                style={[
+                    styles.card,
+                    {
+                        backgroundColor: getCardColor(item.color),
+                        borderColor: isSelected ? colors.primary : (item.color === 'default' ? colors.border : 'transparent'),
+                        borderWidth: isSelected ? 2 : (item.color === 'default' ? 1 : 0),
+                        ...getCardShadow(colors),
+                    },
+                ]}
+                onPress={() => {
+                    if (selectionMode) {
+                        toggleSelect(item.id);
+                    } else {
+                        router.push(`/memo/${item.id}`);
+                    }
+                }}
+                onLongPress={() => {
+                    if (!selectionMode) {
+                        setSelectionMode(true);
+                        setSelectedIds(new Set([item.id]));
+                    }
+                }}
+                delayLongPress={350}
+                activeOpacity={0.7}
+            >
+                {selectionMode && (
+                    <View style={[styles.checkOverlay, { borderColor: isSelected ? colors.primary : colors.border, backgroundColor: isSelected ? `${colors.primary}15` : 'transparent' }]}>
+                        <Ionicons name={isSelected ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={isSelected ? colors.primary : colors.border} />
                     </View>
                 )}
-
-                {/* Triggers Tags */}
-                {item.triggers.map(trigger => {
-                    let label = '';
-                    if (trigger.type === 'datetime' && trigger.scheduledAt) {
-                        const d = new Date(trigger.scheduledAt);
-                        label = `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
-                    } else if (trigger.type === 'timer') {
-                        label = 'タイマー';
-                    } else if (trigger.type === 'location_enter') {
-                        label = trigger.locationName || '到着';
-                    } else if (trigger.type === 'location_exit') {
-                        label = trigger.locationName || '出発';
-                    }
-
-                    const isNotifyType = trigger.type === 'datetime' || trigger.type === 'timer' || trigger.type.startsWith('location');
-                    const themeColor = isNotifyType ? '#FF9800' : colors.primary;
-
-                    return (
-                        <View key={trigger.id} style={styles.badgeWrapper}>
-                            <View
-                                style={[
-                                    styles.triggerBadge,
-                                    {
-                                        backgroundColor: trigger.isActive
-                                            ? `${themeColor}20`
-                                            : `${colors.textTertiary}15`,
-                                        borderColor: trigger.isActive ? `${themeColor}40` : 'transparent',
-                                        borderWidth: trigger.isActive ? 1 : 0,
-                                    },
-                                ]}
+                {item.isPinned && (
+                    <View style={styles.pinBadge}>
+                        <Ionicons name="pin" size={12} color={colors.primary} />
+                    </View>
+                )}
+                {item.title ? (
+                    <View style={styles.cardHeader}>
+                        {item.todoType !== 'none' && (
+                            <Pressable
+                                onPress={(e: GestureResponderEvent) => {
+                                    e.stopPropagation();
+                                    const isCompleted = !item.isCompleted;
+                                    const completedAt = isCompleted ? new Date().toISOString() : null;
+                                    updateMemo(item.id, { isCompleted, completedAt });
+                                }}
+                                style={styles.checkbox}
+                                hitSlop={8}
                             >
                                 <Ionicons
-                                    name={getTriggerIcon(trigger.type) as any}
-                                    size={11}
-                                    color={trigger.isActive ? themeColor : colors.textTertiary}
+                                    name={item.isCompleted ? "checkbox" : "square-outline"}
+                                    size={20}
+                                    color={item.isCompleted ? colors.primary : colors.textTertiary}
                                 />
-                                <Text
+                            </Pressable>
+                        )}
+                        <Text
+                            style={[
+                                styles.cardTitle,
+                                { color: colorScheme === 'dark' ? '#F5F5F7' : '#1A1A2E' },
+                                item.isCompleted && styles.completedText
+                            ]}
+                            numberOfLines={2}
+                        >
+                            {item.title}
+                        </Text>
+                    </View>
+                ) : null}
+                {item.content ? (
+                    <Text
+                        style={[
+                            styles.cardContent,
+                            { color: colorScheme === 'dark' ? '#D1D5DB' : '#4B5563' },
+                            item.isCompleted && styles.completedText
+                        ]}
+                        numberOfLines={6}
+                    >
+                        {item.content}
+                    </Text>
+                ) : null}
+                {/* Trigger & ToDo Tags */}
+                <View style={[styles.triggerBadges, { marginTop: Spacing.sm }]}>
+                    {/* ToDo Date Tag */}
+                    {item.todoType !== 'none' && item.todoDate && (
+                        <View style={[styles.triggerBadge, { backgroundColor: '#2196F320', borderColor: '#2196F340', borderWidth: 1 }]}>
+                            <Ionicons name="checkbox-outline" size={12} color="#2196F3" />
+                            <Text style={[styles.triggerBadgeText, { color: '#2196F3', fontWeight: '600' }]}>
+                                {item.todoDate.split('-').slice(1).join('/')}
+                            </Text>
+                        </View>
+                    )}
+
+                    {/* Triggers Tags */}
+                    {item.triggers.map(trigger => {
+                        let label = '';
+                        if (trigger.type === 'datetime' && trigger.scheduledAt) {
+                            const d = new Date(trigger.scheduledAt);
+                            label = `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
+                        } else if (trigger.type === 'timer') {
+                            label = 'タイマー';
+                        } else if (trigger.type === 'location_enter') {
+                            label = trigger.locationName || '到着';
+                        } else if (trigger.type === 'location_exit') {
+                            label = trigger.locationName || '出発';
+                        }
+
+                        const isNotifyType = trigger.type === 'datetime' || trigger.type === 'timer' || trigger.type.startsWith('location');
+                        const themeColor = isNotifyType ? '#FF9800' : colors.primary;
+
+                        return (
+                            <View key={trigger.id} style={styles.badgeWrapper}>
+                                <View
                                     style={[
-                                        styles.triggerBadgeText,
-                                        { color: trigger.isActive ? themeColor : colors.textTertiary, fontWeight: trigger.isActive ? '600' : '400' },
+                                        styles.triggerBadge,
+                                        {
+                                            backgroundColor: trigger.isActive
+                                                ? `${themeColor}20`
+                                                : `${colors.textTertiary}15`,
+                                            borderColor: trigger.isActive ? `${themeColor}40` : 'transparent',
+                                            borderWidth: trigger.isActive ? 1 : 0,
+                                        },
                                     ]}
                                 >
-                                    {label}
-                                </Text>
-                                {trigger.type === 'timer' && trigger.isActive && (
-                                    <CountdownText
-                                        trigger={trigger}
-                                        style={[styles.countdownText, { color: themeColor }]}
-                                        hideIcon={true}
+                                    <Ionicons
+                                        name={getTriggerIcon(trigger.type) as any}
+                                        size={11}
+                                        color={trigger.isActive ? themeColor : colors.textTertiary}
                                     />
-                                )}
+                                    <Text
+                                        style={[
+                                            styles.triggerBadgeText,
+                                            { color: trigger.isActive ? themeColor : colors.textTertiary, fontWeight: trigger.isActive ? '600' : '400' },
+                                        ]}
+                                    >
+                                        {label}
+                                    </Text>
+                                    {trigger.type === 'timer' && trigger.isActive && (
+                                        <CountdownText
+                                            trigger={trigger}
+                                            style={[styles.countdownText, { color: themeColor }]}
+                                            hideIcon={true}
+                                        />
+                                    )}
+                                </View>
                             </View>
-                        </View>
-                    );
-                })}
-            </View>
-        </TouchableOpacity>
-    );
+                        );
+                    })}
+                </View>
+            </TouchableOpacity>
+        );
+    };
 
     const renderEmptyState = () => (
         <View style={styles.emptyState}>
@@ -428,6 +491,23 @@ export default function MemoListScreen() {
                 </View>
             )}
 
+            {/* Selection Mode Bar */}
+            {selectionMode && (
+                <View style={[styles.selectionBar, { backgroundColor: colors.surface, ...getCardShadow(colors) }]}>
+                    <TouchableOpacity onPress={exitSelectionMode} style={styles.selectionBarBtn}>
+                        <Ionicons name="close" size={22} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                    <Text style={[styles.selectionCount, { color: colors.text }]}>{selectedIds.size}件選択中</Text>
+                    <TouchableOpacity
+                        onPress={handleBulkDelete}
+                        disabled={selectedIds.size === 0}
+                        style={[styles.selectionBarBtn, { opacity: selectedIds.size === 0 ? 0.4 : 1 }]}
+                    >
+                        <Ionicons name="trash-outline" size={22} color={colors.error} />
+                    </TouchableOpacity>
+                </View>
+            )}
+
             {/* Memo Grid */}
             <FlatList
                 data={filteredMemos}
@@ -478,7 +558,7 @@ export default function MemoListScreen() {
                         </View>
 
                         <View style={styles.filterContainerResponsive}>
-                            {(['all', 'timer', 'todo', 'datetime', 'location'] as const).map((type) => (
+                            {(['all', 'timer', 'todo', 'datetime', 'location', 'tag'] as const).map((type) => (
                                 <TouchableOpacity
                                     key={type}
                                     activeOpacity={0.7}
@@ -486,12 +566,26 @@ export default function MemoListScreen() {
                                         styles.filterChipInside,
                                         filterType === type && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }
                                     ]}
-                                    onPress={() => setFilterType(type)}
+                                    onPress={() => {
+                                        if (type === 'tag') {
+                                            setFilterType('tag');
+                                            // サブメニュー: 現在のtagFilterをトグル
+                                            setTagFilter(prev =>
+                                                filterType !== 'tag' ? 'work' :
+                                                    prev === 'work' ? 'private' :
+                                                        prev === 'private' ? null : 'work'
+                                            );
+                                        } else {
+                                            setFilterType(type);
+                                            setTagFilter(null);
+                                        }
+                                    }}
                                 >
                                     {type === 'todo' && <Ionicons name="checkmark-circle-outline" size={14} color={filterType === type ? colors.primary : colors.textSecondary} />}
                                     {type === 'datetime' && <Ionicons name="calendar-outline" size={14} color={filterType === type ? colors.primary : colors.textSecondary} />}
                                     {type === 'timer' && <Ionicons name="time-outline" size={14} color={filterType === type ? colors.primary : colors.textSecondary} />}
                                     {type === 'location' && <Ionicons name="location-outline" size={14} color={filterType === type ? colors.primary : colors.textSecondary} />}
+                                    {type === 'tag' && <Ionicons name={tagFilter === 'private' ? 'home-outline' : 'briefcase-outline'} size={14} color={filterType === type ? colors.primary : colors.textSecondary} />}
                                     <Text style={[
                                         styles.filterText,
                                         { color: filterType === type ? colors.primary : colors.textSecondary }
@@ -499,7 +593,10 @@ export default function MemoListScreen() {
                                         {type === 'all' ? 'すべて' :
                                             type === 'todo' ? 'TODO' :
                                                 type === 'datetime' ? '日時' :
-                                                    type === 'timer' ? 'タイマー' : 'エリア'}
+                                                    type === 'timer' ? 'タイマー' :
+                                                        type === 'location' ? 'エリア' :
+                                                            tagFilter === 'work' ? '仕事' :
+                                                                tagFilter === 'private' ? 'PLV' : 'タグ'}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
@@ -911,5 +1008,37 @@ const styles = StyleSheet.create({
     webNoticeText: {
         fontSize: 10,
         fontWeight: '500',
+    },
+    checkOverlay: {
+        position: 'absolute' as const,
+        top: Spacing.xs,
+        left: Spacing.xs,
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        borderWidth: 1.5,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 10,
+    },
+    selectionBar: {
+        flexDirection: 'row' as const,
+        alignItems: 'center' as const,
+        justifyContent: 'space-between' as const,
+        marginHorizontal: Spacing.lg,
+        marginBottom: Spacing.sm,
+        paddingHorizontal: Spacing.md,
+        paddingVertical: Spacing.sm,
+        borderRadius: BorderRadius.lg,
+    },
+    selectionBarBtn: {
+        width: 40,
+        height: 40,
+        justifyContent: 'center' as const,
+        alignItems: 'center' as const,
+    },
+    selectionCount: {
+        fontSize: FontSize.md,
+        fontWeight: '700' as const,
     },
 });

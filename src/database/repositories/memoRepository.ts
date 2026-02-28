@@ -21,14 +21,15 @@ export async function createMemo(
     const completedAt = null;
     const deletedAt = null;
     const blocks = [{ id: '1', type: 'text' as const, content }];
+    const tag = 'work';
 
     await db.runAsync(
-        `INSERT INTO memos (id, title, content, blocks, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, title, content, JSON.stringify(blocks), color, isPinned ? 1 : 0, todoType, todoDate, isCompleted ? 1 : 0, completedAt, now, now, deletedAt]
+        `INSERT INTO memos (id, title, content, blocks, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt, tag)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, title, content, JSON.stringify(blocks), color, isPinned ? 1 : 0, todoType, todoDate, isCompleted ? 1 : 0, completedAt, now, now, deletedAt, tag]
     );
 
-    return { id, title, content, blocks, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt: now, updatedAt: now, deletedAt };
+    return { id, title, content, blocks, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt: now, updatedAt: now, deletedAt, tag };
 }
 
 export async function getMemo(id: string): Promise<Memo | null> {
@@ -101,6 +102,10 @@ export async function updateMemo(
     if (updates.blocks !== undefined) {
         setClauses.push('blocks = ?');
         values.push(JSON.stringify(updates.blocks));
+    }
+    if (updates.tag !== undefined) {
+        setClauses.push('tag = ?');
+        values.push(updates.tag);
     }
 
     if (setClauses.length === 0) return;
@@ -177,6 +182,7 @@ function rowToMemo(row: any): Memo {
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         deletedAt: row.deletedAt,
+        tag: (row.tag === 'private' ? 'private' : 'work') as 'work' | 'private',
     };
 }
 
@@ -187,22 +193,22 @@ export async function upsertMemo(memo: Memo): Promise<void> {
         await db.runAsync(
             `UPDATE memos SET 
             title = ?, content = ?, blocks = ?, color = ?, isPinned = ?, todoType = ?, 
-            todoDate = ?, isCompleted = ?, completedAt = ?, updatedAt = ?, deletedAt = ? 
+            todoDate = ?, isCompleted = ?, completedAt = ?, updatedAt = ?, deletedAt = ?, tag = ? 
             WHERE id = ?`,
             [
                 memo.title, memo.content, JSON.stringify(memo.blocks), memo.color, memo.isPinned ? 1 : 0, memo.todoType,
-                memo.todoDate, memo.isCompleted ? 1 : 0, memo.completedAt, memo.updatedAt, memo.deletedAt, memo.id
+                memo.todoDate, memo.isCompleted ? 1 : 0, memo.completedAt, memo.updatedAt, memo.deletedAt, memo.tag || 'work', memo.id
             ]
         );
     } else {
         await db.runAsync(
             `INSERT INTO memos (
             id, title, content, blocks, color, isPinned, todoType, todoDate, 
-            isCompleted, completedAt, createdAt, updatedAt, deletedAt
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            isCompleted, completedAt, createdAt, updatedAt, deletedAt, tag
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 memo.id, memo.title, memo.content, JSON.stringify(memo.blocks), memo.color, memo.isPinned ? 1 : 0, memo.todoType,
-                memo.todoDate, memo.isCompleted ? 1 : 0, memo.completedAt, memo.createdAt, memo.updatedAt, memo.deletedAt
+                memo.todoDate, memo.isCompleted ? 1 : 0, memo.completedAt, memo.createdAt, memo.updatedAt, memo.deletedAt, memo.tag || 'work'
             ]
         );
     }

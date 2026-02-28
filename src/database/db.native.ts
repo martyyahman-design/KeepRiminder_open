@@ -43,7 +43,8 @@ async function initSQLite(): Promise<any> {
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
       deletedAt TEXT,
-      blocks TEXT
+      blocks TEXT,
+      tag TEXT NOT NULL DEFAULT 'work'
     );
 
     CREATE TABLE IF NOT EXISTS triggers (
@@ -92,6 +93,16 @@ async function initSQLite(): Promise<any> {
       console.log('Migration: Added blocks column to memos table');
     } catch (err) {
       console.warn('Migration failed (blocks may already exist):', err);
+    }
+  }
+
+  const hasTag = tableInfo.some(col => col.name === 'tag');
+  if (!hasTag) {
+    try {
+      await database.execAsync("ALTER TABLE memos ADD COLUMN tag TEXT NOT NULL DEFAULT 'work'");
+      console.log('Migration: Added tag column to memos table');
+    } catch (err) {
+      console.warn('Migration failed (tag may already exist):', err);
     }
   }
 

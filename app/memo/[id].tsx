@@ -331,6 +331,16 @@ export default function MemoEditScreen() {
                     />
                 </TouchableOpacity>
                 <TouchableOpacity
+                    onPress={() => updateMemo(memo.id, { tag: memo.tag === 'work' ? 'private' : 'work' })}
+                    style={[styles.actionBtn, { backgroundColor: memo.tag === 'private' ? `${colors.accent}15` : `${colors.primary}10` }]}
+                >
+                    <Ionicons
+                        name={memo.tag === 'private' ? 'home-outline' : 'briefcase-outline'}
+                        size={20}
+                        color={memo.tag === 'private' ? colors.accent : colors.primary}
+                    />
+                </TouchableOpacity>
+                <TouchableOpacity
                     onPress={() => setShowColorPicker(!showColorPicker)}
                     style={[styles.actionBtn, { backgroundColor: `${colors.text}10` }]}
                 >
