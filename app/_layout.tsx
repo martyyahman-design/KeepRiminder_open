@@ -14,6 +14,32 @@ export default function RootLayout() {
     const colorScheme = useColorScheme();
     const colors = colorScheme === 'dark' ? Colors.dark : Colors.light;
 
+    // Ignore Expo's "Unable to activate keep awake" unhandled promise rejection during dev
+    if (__DEV__) {
+        const originalConsoleError = console.error;
+        console.error = (...args) => {
+            if (args[0] && typeof args[0] === 'string' && args[0].includes('Unable to activate keep awake')) {
+                return;
+            }
+            originalConsoleError(...args);
+        };
+
+        // Also suppress unhandled promise rejections specifically for keep awake
+        const { ErrorUtils } = global as any;
+        if (ErrorUtils) {
+            const originalHandler = ErrorUtils.getGlobalHandler();
+            ErrorUtils.setGlobalHandler((error: any, isFatal?: boolean) => {
+                if (error && error.message && error.message.includes('Unable to activate keep awake')) {
+                    console.log('Suppressed keep awake error');
+                    return;
+                }
+                if (originalHandler) {
+                    originalHandler(error, isFatal);
+                }
+            });
+        }
+    }
+
     useEffect(() => {
         initializeApp();
     }, []);
