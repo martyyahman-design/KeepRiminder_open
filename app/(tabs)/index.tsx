@@ -269,7 +269,7 @@ export default function MemoListScreen() {
             <View style={styles.header}>
                 <View style={styles.headerLeft}>
                     <View style={[styles.logoContainer, { backgroundColor: colors.primary + '15' }]}>
-                        <Ionicons name="notifications" size={22} color={colors.primary} />
+                        <Image source={require('../../assets/keepreminder_icon.png')} style={{ width: 26, height: 26, borderRadius: 6 }} />
                     </View>
                     <Text style={[styles.headerTitle, { color: colors.text }]}>KeepReminder</Text>
                 </View>
