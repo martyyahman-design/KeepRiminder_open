@@ -84,7 +84,7 @@ async function initSQLite(): Promise<any> {
   `);
 
   // Proper migration for native SQLite
-  const tableInfo = await database.getAllAsync<{ name: string }>('PRAGMA table_info(memos)');
+  const tableInfo = await database.getAllAsync('PRAGMA table_info(memos)') as { name: string }[];
   const hasBlocks = tableInfo.some(col => col.name === 'blocks');
   if (!hasBlocks) {
     try {

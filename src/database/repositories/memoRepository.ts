@@ -20,7 +20,7 @@ export async function createMemo(
     const isCompleted = false;
     const completedAt = null;
     const deletedAt = null;
-    const blocks = [{ id: '1', type: 'text', content }];
+    const blocks = [{ id: '1', type: 'text' as const, content }];
 
     await db.runAsync(
         `INSERT INTO memos (id, title, content, blocks, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt)
