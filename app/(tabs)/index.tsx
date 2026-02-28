@@ -329,6 +329,28 @@ export default function MemoListScreen() {
                 </View>
             </View>
 
+            {/* Top Search Bar (Visible when toggled from header) */}
+            {isSearchVisible && (
+                <View style={styles.topSearchWrapper}>
+                    <View style={[styles.searchRowInside, { marginBottom: 0, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }, getCardShadow(colors)]}>
+                        <Ionicons name="search" size={20} color={colors.textSecondary} style={styles.searchIconInside} />
+                        <TextInput
+                            style={[styles.searchInputInside, { color: colors.text, fontSize: FontSize.md }]}
+                            placeholder="メモを検索..."
+                            placeholderTextColor={colors.textSecondary}
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                            autoFocus
+                        />
+                        {searchQuery.length > 0 && (
+                            <TouchableOpacity onPress={() => setSearchQuery('')}>
+                                <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                </View>
+            )}
+
             {/* Web Notice */}
             {Platform.OS === 'web' && (
                 <View style={styles.webNotice}>
@@ -350,7 +372,7 @@ export default function MemoListScreen() {
                     style={styles.modalOverlay}
                     onPress={() => setIsAccountMenuVisible(false)}
                 >
-                    <View
+                    <Pressable
                         style={[styles.accountMenu, { backgroundColor: colors.surface }, getCardShadow(colors)]}
                         onPress={(e) => e.stopPropagation()}
                     >
@@ -384,7 +406,7 @@ export default function MemoListScreen() {
                                 </TouchableOpacity>
                             </>
                         )}
-                    </View>
+                    </Pressable>
                 </Pressable>
             </Modal>
 
@@ -456,20 +478,7 @@ export default function MemoListScreen() {
                         </View>
 
                         <View style={styles.filterContainerResponsive}>
-                            <TouchableOpacity
-                                activeOpacity={0.7}
-                                style={[
-                                    styles.searchIconOnlyChip,
-                                    { backgroundColor: isSearchVisible ? colors.primary + '20' : colors.surface, borderColor: isSearchVisible ? colors.primary : colors.border }
-                                ]}
-                                onPress={() => setIsSearchVisible(!isSearchVisible)}
-                            >
-                                <Ionicons name="search" size={18} color={isSearchVisible ? colors.primary : colors.textSecondary} />
-                            </TouchableOpacity>
-
-                            <View style={[styles.filterDivider, { backgroundColor: colors.border }]} />
-
-                            {(['all', 'todo', 'datetime', 'timer', 'location'] as const).map((type) => (
+                            {(['all', 'timer', 'todo', 'datetime', 'location'] as const).map((type) => (
                                 <TouchableOpacity
                                     key={type}
                                     activeOpacity={0.7}
@@ -496,24 +505,7 @@ export default function MemoListScreen() {
                             ))}
                         </View>
 
-                        {isSearchVisible && (
-                            <View style={styles.searchRowInside}>
-                                <Ionicons name="search" size={18} color={colors.textSecondary} style={styles.searchIconInside} />
-                                <TextInput
-                                    style={[styles.searchInputInside, { color: colors.text }]}
-                                    placeholder="メモを検索..."
-                                    placeholderTextColor={colors.textSecondary}
-                                    value={searchQuery}
-                                    onChangeText={setSearchQuery}
-                                    autoFocus
-                                />
-                                {searchQuery.length > 0 && (
-                                    <TouchableOpacity onPress={() => setSearchQuery('')}>
-                                        <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                        )}
+
                     </View>
                 ) : null}
                 ListEmptyComponent={!loading ? renderEmptyState : null}
@@ -623,13 +615,9 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(128, 128, 128, 0.2)',
         gap: 4,
     },
-    searchIconOnlyChip: {
-        width: 38,
-        height: 38,
-        borderRadius: 19,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
+    topSearchWrapper: {
+        paddingHorizontal: Spacing.lg,
+        paddingBottom: Spacing.md,
     },
     filterText: {
         fontSize: FontSize.xs,
