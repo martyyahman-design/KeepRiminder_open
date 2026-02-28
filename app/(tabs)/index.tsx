@@ -599,28 +599,29 @@ const styles = StyleSheet.create({
     },
     filterContainerResponsive: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
-        paddingHorizontal: Spacing.lg,
-        gap: Spacing.sm,
+        flexWrap: 'nowrap', // Force single line
+        paddingHorizontal: Spacing.sm, // Reduce from lg
+        gap: 4, // Reduce from Spacing.sm
         marginBottom: Spacing.lg,
         marginTop: -Spacing.sm,
+        justifyContent: 'space-between', // Distribute evenly
     },
     filterChipInside: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 10,
+        paddingHorizontal: 6, // Reduce from 10
         paddingVertical: 6,
         borderRadius: BorderRadius.full,
         borderWidth: 1,
         borderColor: 'rgba(128, 128, 128, 0.2)',
-        gap: 4,
+        gap: 2, // Reduce from 4
     },
     topSearchWrapper: {
         paddingHorizontal: Spacing.lg,
         paddingBottom: Spacing.md,
     },
     filterText: {
-        fontSize: FontSize.xs,
+        fontSize: 11, // Reduce from FontSize.xs (12)
         fontWeight: '700',
     },
     filterDivider: {
