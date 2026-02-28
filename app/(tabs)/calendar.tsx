@@ -5,6 +5,7 @@ import { useMemos } from '../../src/contexts/MemoContext';
 import { useThemeColors, Spacing, FontSize, BorderRadius, getCardShadow } from '../../src/theme';
 import { router } from 'expo-router';
 import { MemoWithTriggers } from '../../src/types/models';
+import * as JapaneseHolidays from 'japanese-holidays';
 
 export default function CalendarScreen() {
     const { memos } = useMemos();
@@ -114,6 +115,10 @@ export default function CalendarScreen() {
                         const hasTrigger = dayEvents.some(e => e.types.includes('trigger'));
                         const isSelected = filterDay === day;
 
+                        const isSunday = idx % 7 === 0;
+                        const isHoliday = JapaneseHolidays.isHoliday(new Date(currentYear, currentMonth, day));
+                        const isRedDay = isSunday || isHoliday;
+
                         return (
                             <TouchableOpacity
                                 key={idx}
@@ -125,8 +130,8 @@ export default function CalendarScreen() {
                             >
                                 <Text style={[
                                     styles.dayText,
-                                    { color: colors.text },
-                                    isSelected && { color: colors.primary, fontWeight: '700' }
+                                    { color: isRedDay ? '#FF5252' : colors.text },
+                                    isSelected && { color: isRedDay ? '#FF5252' : colors.primary, fontWeight: '700' }
                                 ]}>
                                     {day}
                                 </Text>

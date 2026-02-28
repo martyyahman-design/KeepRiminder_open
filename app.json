@@ -15,6 +15,9 @@
     },
     "ios": {
       "supportsTablet": true,
+      "config": {
+        "googleMapsApiKey": "AIzaSyDVZ5WvsipebcF0WiuqJqQa6fsTwIkjZiw"
+      },
       "infoPlist": {
         "NSLocationAlwaysAndWhenInUseUsageDescription": "リマインダーの場所トリガーのために、バックグラウンドでの位置情報アクセスが必要です。",
         "NSLocationWhenInUseUsageDescription": "リマインダーの場所を設定するために位置情報が必要です。",
@@ -26,6 +29,11 @@
       }
     },
     "android": {
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDVZ5WvsipebcF0WiuqJqQa6fsTwIkjZiw"
+        }
+      },
       "adaptiveIcon": {
         "foregroundImage": "./assets/keepreminder_icon.png",
         "backgroundColor": "#1a1a2e"

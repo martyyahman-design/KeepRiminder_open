@@ -28,12 +28,14 @@ interface MapPickerProps {
 let MapView: any;
 let Marker: any;
 let Circle: any;
+let PROVIDER_GOOGLE: any;
 
 if (Platform.OS !== 'web') {
     const Maps = require('react-native-maps');
     MapView = Maps.default;
     Marker = Maps.Marker;
     Circle = Maps.Circle;
+    PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
 }
 
 export const MapPicker: React.FC<MapPickerProps> = ({
@@ -96,6 +98,7 @@ export const MapPicker: React.FC<MapPickerProps> = ({
                     <View style={styles.mapWrapper}>
                         <MapView
                             style={styles.map}
+                            provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
                             region={region}
                             onRegionChangeComplete={setRegion}
                             onLongPress={(e: any) => {

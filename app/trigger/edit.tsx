@@ -411,7 +411,15 @@ export default function TriggerEditScreen() {
                     <View style={styles.mapActionRow}>
                         <TouchableOpacity
                             style={[styles.mapTriggerBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
-                            onPress={() => setMapVisible(true)}
+                            onPress={async () => {
+                                const { requestLocationPermissions } = await import('../../src/services/geofencingService');
+                                const hasPermission = await requestLocationPermissions();
+                                if (!hasPermission) {
+                                    Alert.alert('権限エラー', '地図を表示するための位置情報権限がありません。設定から権限を許可してください。');
+                                    return;
+                                }
+                                setMapVisible(true);
+                            }}
                         >
                             <Ionicons name="map-outline" size={20} color={colors.primary} />
                             <Text style={[styles.mapTriggerText, { color: colors.text }]}>地図で場所・範囲を指定</Text>
