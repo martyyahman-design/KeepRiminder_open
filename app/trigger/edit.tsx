@@ -210,22 +210,7 @@ export default function TriggerEditScreen() {
             }
 
             console.log('Trigger saved successfully, navigating back...');
-
-            // On web, showAlert might be block, but on native it's async
-            if (Platform.OS === 'web') {
-                console.log('Web: Navigating to', `/memo/${memoId}`);
-                router.replace(`/memo/${memoId}`);
-            } else {
-                Alert.alert('成功', 'トリガーを保存しました', [
-                    {
-                        text: 'OK',
-                        onPress: () => {
-                            console.log('Native: Navigating to', `/memo/${memoId}`);
-                            router.replace(`/memo/${memoId}`);
-                        }
-                    }
-                ]);
-            }
+            router.back();
         } catch (err: any) {
             console.error('Error saving trigger:', err);
             Alert.alert('エラー', err.message || 'トリガーの作成に失敗しました');
