@@ -2,7 +2,8 @@ const DRIVE_API_URL = 'https://www.googleapis.com/drive/v3';
 const UPLOAD_API_URL = 'https://www.googleapis.com/upload/drive/v3/files';
 
 /**
- * Service to interact with Google Drive AppData folder
+ * Service to interact with Google Drive AppData folder.
+ * NOTE: Uses string-based multipart body to avoid Blob (not supported on React Native Android).
  */
 export const GoogleDriveService = {
     /**
@@ -37,23 +38,29 @@ export const GoogleDriveService = {
     },
 
     /**
-     * Upload (Create or Update) database file
+     * Upload (Create or Update) database file.
+     * Uses raw multipart/related string body instead of Blob for React Native compatibility.
      */
     async uploadFile(accessToken: string, fileName: string, data: any, fileId?: string): Promise<string> {
-        const metadata = {
-            name: fileName,
-            parents: fileId ? undefined : ['appDataFolder'],
-        };
+        const boundary = 'keepreminder_boundary_xyz';
 
-        const formData = new FormData();
-        formData.append(
-            'metadata',
-            new Blob([JSON.stringify(metadata)], { type: 'application/json' })
-        );
-        formData.append(
-            'file',
-            new Blob([JSON.stringify(data)], { type: 'application/json' })
-        );
+        const metadata = JSON.stringify({
+            name: fileName,
+            ...(fileId ? {} : { parents: ['appDataFolder'] }),
+        });
+        const body_content = JSON.stringify(data);
+
+        const body = [
+            `--${boundary}`,
+            'Content-Type: application/json; charset=UTF-8',
+            '',
+            metadata,
+            `--${boundary}`,
+            'Content-Type: application/json; charset=UTF-8',
+            '',
+            body_content,
+            `--${boundary}--`,
+        ].join('\r\n');
 
         const url = fileId
             ? `${UPLOAD_API_URL}/${fileId}?uploadType=multipart`
@@ -65,8 +72,9 @@ export const GoogleDriveService = {
             method,
             headers: {
                 Authorization: `Bearer ${accessToken}`,
+                'Content-Type': `multipart/related; boundary=${boundary}`,
             },
-            body: formData,
+            body,
         });
 
         const result = await response.json();

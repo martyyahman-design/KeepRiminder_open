@@ -1,6 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Platform } from 'react-native';
 import { getDatabase } from '../database/db';
+import {
+    GoogleSignin,
+    statusCodes,
+} from '@react-native-google-signin/google-signin';
 
 interface User {
     id: string;
@@ -36,6 +40,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             };
             document.head.appendChild(script);
         } else {
+            // Configure Google Sign-In for native (Android / iOS)
+            // webClientId は必須。AndroidはSHA-1フィンガープリントでGCPと紐付け済みなので自動認識される。
+            GoogleSignin.configure({
+                webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+                scopes: ['https://www.googleapis.com/auth/drive.appdata'],
+                offlineAccess: false,
+            });
             setLoading(false);
         }
     }, []);
@@ -45,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const client = (window as any).google.accounts.oauth2.initTokenClient({
                 client_id: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
                 scope: 'https://www.googleapis.com/auth/drive.appdata email profile',
-                prompt: 'consent', // Ensure user is prompted for scopes
+                prompt: 'consent',
                 callback: (response: any) => {
                     if (response.error) {
                         console.error('Google Auth Error:', response.error);
@@ -53,7 +64,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     }
 
                     if (response.access_token) {
-                        // Check if required scopes were granted
                         const grantedScopes = response.scope || '';
                         if (!grantedScopes.includes('https://www.googleapis.com/auth/drive.appdata')) {
                             alert('Google Driveへのアクセス権限が許可されませんでした。アプリを同期するには、ログイン時に「Google Driveのアプリデータ表示」のチェックを入れてください。');
@@ -62,7 +72,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                         setAccessToken(response.access_token);
 
-                        // Fetch user info using access token
                         fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
                             headers: { Authorization: `Bearer ${response.access_token}` }
                         })
@@ -81,8 +90,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             });
             client.requestAccessToken();
         } else {
-            // TODO: react-native-google-signin implementation
-            console.log('Native SignIn to be implemented');
+            // Native (Android / iOS) Google Sign-In
+            try {
+                await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+                const userInfo = await GoogleSignin.signIn();
+                const tokens = await GoogleSignin.getTokens();
+
+                setAccessToken(tokens.accessToken);
+                setUser({
+                    id: userInfo.data?.user.id ?? '',
+                    email: userInfo.data?.user.email ?? '',
+                    name: userInfo.data?.user.name ?? undefined,
+                    photo: userInfo.data?.user.photo ?? undefined,
+                });
+            } catch (error: any) {
+                if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+                    console.log('サインインがキャンセルされました');
+                } else if (error.code === statusCodes.IN_PROGRESS) {
+                    console.log('サインイン処理中です');
+                } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+                    console.error('Google Play Servicesが利用できません');
+                } else {
+                    console.error('Google Sign-In エラー:', error);
+                }
+            }
         }
     };
 
@@ -107,8 +138,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setAccessToken(null);
             }
         } else {
-            setUser(null);
-            setAccessToken(null);
+            try {
+                await GoogleSignin.revokeAccess();
+                await GoogleSignin.signOut();
+            } catch (e) {
+                console.error('Sign out error:', e);
+            } finally {
+                setUser(null);
+                setAccessToken(null);
+            }
         }
     };
 

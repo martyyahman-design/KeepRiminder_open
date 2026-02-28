@@ -14,8 +14,9 @@ import { useThemeColors, Spacing, FontSize, BorderRadius, getCardShadow } from '
 import { getCurrentLocation } from '../services/geofencingService';
 
 // Standard Slider is deprecated in core, but for simplicity we'll check if available
-// In a real project we might use @react-native-community/slider
-const SliderComponent = Platform.OS === 'web' ? View : require('react-native').Slider || View;
+import Slider from '@react-native-community/slider';
+
+const SliderComponent = Platform.OS === 'web' ? View : Slider;
 
 interface MapPickerProps {
     visible: boolean;
