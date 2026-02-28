@@ -439,7 +439,7 @@ export default function MemoListScreen() {
                     styles.listContent,
                     filteredMemos.length === 0 && todayMemos.length === 0 && styles.listEmpty,
                 ]}
-                ListHeaderComponent={(todayMemos.length > 0 || filteredMemos.length > 0) ? (
+                ListHeaderComponent={(memos.length > 0) ? (
                     <View>
                         {todayMemos.length > 0 && (
                             <View style={[styles.todaySection, { backgroundColor: colors.surface + '80', borderColor: colors.border }]}>
