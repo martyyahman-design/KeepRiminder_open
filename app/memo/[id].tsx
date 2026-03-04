@@ -26,6 +26,7 @@ import * as FileSystem from 'expo-file-system';
 import { CalendarDatePicker } from '../../src/components/CalendarDatePicker';
 import { CountdownText } from '../../src/components/CountdownText';
 import { ContentBlock } from '../../src/types/models';
+import ToolTip from '../../src/components/ToolTip';
 
 export default function MemoEditScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -43,6 +44,8 @@ export default function MemoEditScreen() {
     const [selection, setSelection] = useState({ start: 0, end: 0 });
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [showDatePicker, setShowDatePicker] = useState(false);
+    const [pinTooltip, setPinTooltip] = useState({ visible: false, message: '' });
+    const [tagTooltip, setTagTooltip] = useState({ visible: false, message: '' });
     const inputRefs = useRef<{ [key: string]: any }>({});
 
     // Sync heights on Web to prevent 100px default height gap
@@ -86,7 +89,22 @@ export default function MemoEditScreen() {
 
     const handleTogglePin = async () => {
         if (!id || !memo) return;
-        await updateMemo(id, { isPinned: !memo.isPinned });
+        const newPinnedState = !memo.isPinned;
+        await updateMemo(id, { isPinned: newPinnedState });
+
+        // Show tooltip
+        setPinTooltip({ visible: true, message: newPinnedState ? '一覧にピン留めしました' : 'ピン留めを解除しました' });
+        setTimeout(() => setPinTooltip(prev => ({ ...prev, visible: false })), 2000);
+    };
+
+    const handleToggleTag = async () => {
+        if (!id || !memo) return;
+        const newTag = memo.tag === 'work' ? 'private' : 'work';
+        await updateMemo(id, { tag: newTag });
+
+        // Show tooltip
+        setTagTooltip({ visible: true, message: newTag === 'work' ? '仕事タグを設定しました' : 'プライベートタグを設定しました' });
+        setTimeout(() => setTagTooltip(prev => ({ ...prev, visible: false })), 2000);
     };
 
     const handleDelete = () => {
@@ -320,26 +338,34 @@ export default function MemoEditScreen() {
         >
             {/* Top Actions */}
             <View style={styles.topActions}>
-                <TouchableOpacity
-                    onPress={handleTogglePin}
-                    style={[styles.actionBtn, { backgroundColor: `${colors.text}10` }]}
-                >
-                    <Ionicons
-                        name={memo.isPinned ? 'pin' : 'pin-outline'}
-                        size={20}
-                        color={memo.isPinned ? colors.primary : colors.textSecondary}
-                    />
-                </TouchableOpacity>
-                <TouchableOpacity
-                    onPress={() => updateMemo(memo.id, { tag: memo.tag === 'work' ? 'private' : 'work' })}
-                    style={[styles.actionBtn, { backgroundColor: memo.tag === 'private' ? `${colors.accent}15` : `${colors.primary}10` }]}
-                >
-                    <Ionicons
-                        name={memo.tag === 'private' ? 'home-outline' : 'briefcase-outline'}
-                        size={20}
-                        color={memo.tag === 'private' ? colors.accent : colors.primary}
-                    />
-                </TouchableOpacity>
+                <View style={{ position: 'relative' }}>
+                    <TouchableOpacity
+                        onPress={handleTogglePin}
+                        style={[styles.actionBtn, { backgroundColor: `${colors.text}10` }]}
+                    >
+                        <Ionicons
+                            name={memo.isPinned ? 'pin' : 'pin-outline'}
+                            size={20}
+                            color={memo.isPinned ? colors.primary : colors.textSecondary}
+                        />
+                    </TouchableOpacity>
+                    <ToolTip visible={pinTooltip.visible} message={pinTooltip.message} />
+                </View>
+
+                <View style={{ position: 'relative' }}>
+                    <TouchableOpacity
+                        onPress={handleToggleTag}
+                        style={[styles.actionBtn, { backgroundColor: memo.tag === 'private' ? `${colors.accent}15` : `${colors.primary}10` }]}
+                    >
+                        <Ionicons
+                            name={memo.tag === 'private' ? 'home-outline' : 'briefcase-outline'}
+                            size={20}
+                            color={memo.tag === 'private' ? colors.accent : colors.primary}
+                        />
+                    </TouchableOpacity>
+                    <ToolTip visible={tagTooltip.visible} message={tagTooltip.message} />
+                </View>
+
                 <TouchableOpacity
                     onPress={() => setShowColorPicker(!showColorPicker)}
                     style={[styles.actionBtn, { backgroundColor: `${colors.text}10` }]}

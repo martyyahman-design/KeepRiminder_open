@@ -21,6 +21,7 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useMemos } from '../../src/contexts/MemoContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThemeColors, Spacing, FontSize, BorderRadius, getCardShadow } from '../../src/theme';
 import { MemoWithTriggers, MEMO_COLORS, MemoColor } from '../../src/types/models';
 import { CountdownText } from '../../src/components/CountdownText';
@@ -37,6 +38,7 @@ export default function MemoListScreen() {
     const { isSyncing } = useSync();
     const colors = useThemeColors();
     const colorScheme = useColorScheme();
+    const insets = useSafeAreaInsets();
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearchVisible, setIsSearchVisible] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
@@ -328,7 +330,7 @@ export default function MemoListScreen() {
     );
 
     return (
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.container, { backgroundColor: colors.background, paddingTop: Math.max(insets.top, Spacing.md) }]}>
             <View style={styles.header}>
                 <View style={styles.headerLeft}>
                     <View style={[styles.logoContainer, { backgroundColor: colors.primary + '15' }]}>
@@ -393,36 +395,40 @@ export default function MemoListScreen() {
             </View>
 
             {/* Top Search Bar (Visible when toggled from header) */}
-            {isSearchVisible && (
-                <View style={styles.topSearchWrapper}>
-                    <View style={[styles.searchRowInside, { marginBottom: 0, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }, getCardShadow(colors)]}>
-                        <Ionicons name="search" size={20} color={colors.textSecondary} style={styles.searchIconInside} />
-                        <TextInput
-                            style={[styles.searchInputInside, { color: colors.text, fontSize: FontSize.md }]}
-                            placeholder="メモを検索..."
-                            placeholderTextColor={colors.textSecondary}
-                            value={searchQuery}
-                            onChangeText={setSearchQuery}
-                            autoFocus
-                        />
-                        {searchQuery.length > 0 && (
-                            <TouchableOpacity onPress={() => setSearchQuery('')}>
-                                <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
-                            </TouchableOpacity>
-                        )}
+            {
+                isSearchVisible && (
+                    <View style={styles.topSearchWrapper}>
+                        <View style={[styles.searchRowInside, { marginBottom: 0, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }, getCardShadow(colors)]}>
+                            <Ionicons name="search" size={20} color={colors.textSecondary} style={styles.searchIconInside} />
+                            <TextInput
+                                style={[styles.searchInputInside, { color: colors.text, fontSize: FontSize.md }]}
+                                placeholder="メモを検索..."
+                                placeholderTextColor={colors.textSecondary}
+                                value={searchQuery}
+                                onChangeText={setSearchQuery}
+                                autoFocus
+                            />
+                            {searchQuery.length > 0 && (
+                                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                                    <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                            )}
+                        </View>
                     </View>
-                </View>
-            )}
+                )
+            }
 
             {/* Web Notice */}
-            {Platform.OS === 'web' && (
-                <View style={styles.webNotice}>
-                    <Ionicons name="notifications-off-outline" size={12} color={colors.textTertiary} />
-                    <Text style={[styles.webNoticeText, { color: colors.textTertiary }]}>
-                        ※Web版では通知・アラーム機能は動作しません
-                    </Text>
-                </View>
-            )}
+            {
+                Platform.OS === 'web' && (
+                    <View style={styles.webNotice}>
+                        <Ionicons name="notifications-off-outline" size={12} color={colors.textTertiary} />
+                        <Text style={[styles.webNoticeText, { color: colors.textTertiary }]}>
+                            ※Web版では通知・アラーム機能は動作しません
+                        </Text>
+                    </View>
+                )
+            }
 
             {/* Account Info Modal */}
             <Modal
@@ -474,39 +480,43 @@ export default function MemoListScreen() {
             </Modal>
 
             {/* Login Warning Banner */}
-            {!user && !authLoading && (
-                <View style={[styles.warningBanner, { backgroundColor: colors.surface, borderColor: colors.warning + '40' }, getCardShadow(colors)]}>
-                    <View style={[styles.warningIconContainer, { backgroundColor: colors.warning + '15' }]}>
-                        <Ionicons name="cloud-offline" size={20} color={colors.warning} />
+            {
+                !user && !authLoading && (
+                    <View style={[styles.warningBanner, { backgroundColor: colors.surface, borderColor: colors.warning + '40' }, getCardShadow(colors)]}>
+                        <View style={[styles.warningIconContainer, { backgroundColor: colors.warning + '15' }]}>
+                            <Ionicons name="cloud-offline" size={20} color={colors.warning} />
+                        </View>
+                        <View style={styles.warningContent}>
+                            <Text style={[styles.warningTitle, { color: colors.text }]}>同期オフ</Text>
+                            <Text style={[styles.warningText, { color: colors.textSecondary }]}>
+                                ログインすると Google Drive でデータを同期できます
+                            </Text>
+                        </View>
+                        <TouchableOpacity onPress={signIn} style={[styles.warningAction, { backgroundColor: colors.primary }]}>
+                            <Text style={styles.warningActionText}>ログイン</Text>
+                        </TouchableOpacity>
                     </View>
-                    <View style={styles.warningContent}>
-                        <Text style={[styles.warningTitle, { color: colors.text }]}>同期オフ</Text>
-                        <Text style={[styles.warningText, { color: colors.textSecondary }]}>
-                            ログインすると Google Drive でデータを同期できます
-                        </Text>
-                    </View>
-                    <TouchableOpacity onPress={signIn} style={[styles.warningAction, { backgroundColor: colors.primary }]}>
-                        <Text style={styles.warningActionText}>ログイン</Text>
-                    </TouchableOpacity>
-                </View>
-            )}
+                )
+            }
 
             {/* Selection Mode Bar */}
-            {selectionMode && (
-                <View style={[styles.selectionBar, { backgroundColor: colors.surface, ...getCardShadow(colors) }]}>
-                    <TouchableOpacity onPress={exitSelectionMode} style={styles.selectionBarBtn}>
-                        <Ionicons name="close" size={22} color={colors.textSecondary} />
-                    </TouchableOpacity>
-                    <Text style={[styles.selectionCount, { color: colors.text }]}>{selectedIds.size}件選択中</Text>
-                    <TouchableOpacity
-                        onPress={handleBulkDelete}
-                        disabled={selectedIds.size === 0}
-                        style={[styles.selectionBarBtn, { opacity: selectedIds.size === 0 ? 0.4 : 1 }]}
-                    >
-                        <Ionicons name="trash-outline" size={22} color={colors.error} />
-                    </TouchableOpacity>
-                </View>
-            )}
+            {
+                selectionMode && (
+                    <View style={[styles.selectionBar, { backgroundColor: colors.surface, ...getCardShadow(colors) }]}>
+                        <TouchableOpacity onPress={exitSelectionMode} style={styles.selectionBarBtn}>
+                            <Ionicons name="close" size={22} color={colors.textSecondary} />
+                        </TouchableOpacity>
+                        <Text style={[styles.selectionCount, { color: colors.text }]}>{selectedIds.size}件選択中</Text>
+                        <TouchableOpacity
+                            onPress={handleBulkDelete}
+                            disabled={selectedIds.size === 0}
+                            style={[styles.selectionBarBtn, { opacity: selectedIds.size === 0 ? 0.4 : 1 }]}
+                        >
+                            <Ionicons name="trash-outline" size={22} color={colors.error} />
+                        </TouchableOpacity>
+                    </View>
+                )
+            }
 
             {/* Memo Grid */}
             <FlatList
@@ -630,7 +640,7 @@ export default function MemoListScreen() {
             >
                 <Ionicons name="add" size={28} color={colors.fabText} />
             </TouchableOpacity>
-        </View>
+        </View >
     );
 }
 
@@ -835,7 +845,7 @@ const styles = StyleSheet.create({
     fab: {
         position: 'absolute',
         right: Spacing.xl,
-        bottom: 110,
+        bottom: 20, // Lowered positioning, sits perfectly above tab bar
         width: 56,
         height: 56,
         borderRadius: 28,
