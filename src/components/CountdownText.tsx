@@ -12,15 +12,25 @@ export const CountdownText: React.FC<CountdownTextProps> = ({ trigger, style, hi
     const [remaining, setRemaining] = useState<number>(0);
 
     useEffect(() => {
-        if (trigger.type !== 'timer' || !trigger.isActive || !trigger.startedAt || !trigger.durationSeconds) {
+        if (trigger.type !== 'timer' || !trigger.isActive || !trigger.startedAt) {
             return;
         }
 
         const calculateRemaining = () => {
-            const start = new Date(trigger.startedAt!).getTime();
-            const duration = trigger.durationSeconds! * 1000;
             const now = new Date().getTime();
-            const rem = Math.max(0, Math.floor((start + duration - now) / 1000));
+            let rem = 0;
+
+            if (trigger.scheduledAt) {
+                // If a snoozed timer relies on scheduledAt, count down to that explicit target
+                const target = new Date(trigger.scheduledAt).getTime();
+                rem = Math.max(0, Math.floor((target - now) / 1000));
+            } else if (trigger.durationSeconds) {
+                // Standard un-snoozed timer behavior
+                const start = new Date(trigger.startedAt!).getTime();
+                const duration = trigger.durationSeconds * 1000;
+                rem = Math.max(0, Math.floor((start + duration - now) / 1000));
+            }
+
             setRemaining(rem);
         };
 
@@ -28,7 +38,7 @@ export const CountdownText: React.FC<CountdownTextProps> = ({ trigger, style, hi
         const interval = setInterval(calculateRemaining, 1000);
 
         return () => clearInterval(interval);
-    }, [trigger.startedAt, trigger.durationSeconds, trigger.isActive]);
+    }, [trigger.startedAt, trigger.durationSeconds, trigger.scheduledAt, trigger.isActive]);
 
     if (!trigger.isActive || remaining <= 0) return null;
 

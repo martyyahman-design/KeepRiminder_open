@@ -1,7 +1,7 @@
 import { Memo, Trigger } from '../types/models';
 import { getMemo } from '../database/repositories/memoRepository';
 import { getActiveTriggersByType, updateTrigger } from '../database/repositories/triggerRepository';
-import { scheduleNotificationAt, sendNotification } from './notificationService';
+import { scheduleNotificationAt, sendNotification, cancelNotification } from './notificationService';
 import { startAlarm } from './alarmService';
 
 export async function scheduleAllDatetimeTriggers(): Promise<void> {
@@ -40,11 +40,22 @@ export async function scheduleDatetimeTrigger(trigger: Trigger): Promise<void> {
     }
 }
 
-export async function startTimerTrigger(trigger: Trigger): Promise<void> {
-    if (!trigger.durationSeconds) return;
+export async function cancelDatetimeTrigger(trigger: Trigger): Promise<void> {
+    await cancelNotification(trigger.id);
+}
 
-    const startTime = trigger.startedAt ? new Date(trigger.startedAt) : new Date();
-    const endTime = new Date(startTime.getTime() + trigger.durationSeconds * 1000);
+export async function startTimerTrigger(trigger: Trigger): Promise<void> {
+    if (!trigger.durationSeconds && !trigger.scheduledAt) return;
+
+    let endTime: Date;
+    if (trigger.scheduledAt) {
+        // If snoozed, prioritize the scheduledAt explicit target time
+        endTime = new Date(trigger.scheduledAt);
+    } else {
+        // Normal unsnoozed timer
+        const startTime = trigger.startedAt ? new Date(trigger.startedAt) : new Date();
+        endTime = new Date(startTime.getTime() + (trigger.durationSeconds || 0) * 1000);
+    }
     const now = new Date();
 
     if (endTime <= now) {
@@ -62,6 +73,10 @@ export async function startTimerTrigger(trigger: Trigger): Promise<void> {
     if (!memo) return;
 
     await scheduleNotificationAt(memo, trigger, endTime);
+}
+
+export async function cancelTimerTrigger(trigger: Trigger): Promise<void> {
+    await cancelNotification(trigger.id);
 }
 
 export async function scheduleAllTimerTriggers(): Promise<void> {
@@ -94,13 +109,12 @@ export async function snoozeTrigger(triggerId: string, minutes: number): Promise
     const newTime = new Date(now.getTime() + minutes * 60 * 1000);
 
     if (trigger.type === 'timer') {
-        const durationSeconds = minutes * 60;
+        const scheduledAt = newTime.toISOString();
         await updateTrigger(triggerId, {
             isActive: true,
-            startedAt: now.toISOString(),
-            durationSeconds: durationSeconds
+            scheduledAt: scheduledAt
         });
-        const updatedTrigger = { ...trigger, isActive: true, startedAt: now.toISOString(), durationSeconds };
+        const updatedTrigger = { ...trigger, isActive: true, scheduledAt };
         await startTimerTrigger(updatedTrigger);
     } else if (trigger.type === 'datetime') {
         const scheduledAt = newTime.toISOString();

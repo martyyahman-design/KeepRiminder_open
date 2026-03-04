@@ -12,6 +12,7 @@ import {
     Pressable,
     GestureResponderEvent,
     Image,
+    Switch,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,10 +28,12 @@ import { CalendarDatePicker } from '../../src/components/CalendarDatePicker';
 import { CountdownText } from '../../src/components/CountdownText';
 import { ContentBlock } from '../../src/types/models';
 import ToolTip from '../../src/components/ToolTip';
+import { startTimerTrigger, cancelTimerTrigger, scheduleDatetimeTrigger, cancelDatetimeTrigger } from '../../src/services/schedulerService';
+import { registerGeofence, unregisterGeofence } from '../../src/services/geofencingService';
 
 export default function MemoEditScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
-    const { memos, updateMemo, deleteMemo, deleteTrigger } = useMemos();
+    const { memos, updateMemo, deleteMemo, deleteTrigger, updateTrigger } = useMemos();
     const colors = useThemeColors();
     const colorScheme = useColorScheme();
 
@@ -158,6 +161,45 @@ export default function MemoEditScreen() {
                 },
             ]
         );
+    };
+
+    const handleToggleTrigger = async (trigger: Trigger) => {
+        const newIsActive = !trigger.isActive;
+        let updates: any = { isActive: newIsActive };
+
+        if (newIsActive) {
+            // Turning ON
+            if (trigger.type === 'timer') {
+                // Clear any previous snooze state
+                updates.scheduledAt = null;
+                updates.startedAt = new Date().toISOString();
+                const updatedTrigger = { ...trigger, ...updates };
+                await updateTrigger(trigger.id, updates);
+                await startTimerTrigger(updatedTrigger);
+            } else if (trigger.type === 'datetime') {
+                if (trigger.scheduledAt && new Date(trigger.scheduledAt) <= new Date()) {
+                    Alert.alert('エラー', '過去の日時は設定できません。トリガーを再作成してください。');
+                    return;
+                }
+                const updatedTrigger = { ...trigger, ...updates };
+                await updateTrigger(trigger.id, updates);
+                await scheduleDatetimeTrigger(updatedTrigger);
+            } else if (trigger.type.startsWith('location')) {
+                const updatedTrigger = { ...trigger, ...updates };
+                await updateTrigger(trigger.id, updates);
+                await registerGeofence(updatedTrigger);
+            }
+        } else {
+            // Turning OFF
+            await updateTrigger(trigger.id, updates);
+            if (trigger.type === 'timer') {
+                await cancelTimerTrigger(trigger);
+            } else if (trigger.type === 'datetime') {
+                await cancelDatetimeTrigger(trigger);
+            } else if (trigger.type.startsWith('location')) {
+                await unregisterGeofence(trigger.id);
+            }
+        }
     };
 
     const getCardBg = (c: MemoColor) => {
@@ -640,15 +682,23 @@ export default function MemoEditScreen() {
                                         </View>
                                     </View>
                                 </View>
-                                <Pressable
-                                    onPress={(e: GestureResponderEvent) => {
-                                        e.stopPropagation();
-                                        handleDeleteTrigger(trigger.id);
-                                    }}
-                                    hitSlop={8}
-                                >
-                                    <Ionicons name="close-circle" size={22} color={colors.textTertiary} />
-                                </Pressable>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+                                    <Switch
+                                        value={trigger.isActive}
+                                        onValueChange={() => handleToggleTrigger(trigger)}
+                                        trackColor={{ false: `${colors.text}20`, true: colors.primary }}
+                                        thumbColor={Platform.OS === 'ios' ? '#FFFFFF' : trigger.isActive ? '#FFFFFF' : '#f4f3f4'}
+                                    />
+                                    <Pressable
+                                        onPress={(e: GestureResponderEvent) => {
+                                            e.stopPropagation();
+                                            handleDeleteTrigger(trigger.id);
+                                        }}
+                                        hitSlop={8}
+                                    >
+                                        <Ionicons name="close-circle" size={22} color={colors.textTertiary} />
+                                    </Pressable>
+                                </View>
                             </View>
                         ))
                     )}

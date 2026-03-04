@@ -11,8 +11,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { stopAlarm, getAlarmState, addAlarmListener } from '../services/alarmService';
 import { FontSize, useThemeColors } from '../theme';
 import { Memo, Trigger } from '../types/models';
-
 import * as SplashScreen from 'expo-splash-screen';
+import { useMemos } from '../contexts/MemoContext';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -21,6 +21,7 @@ export default function AlarmOverlay() {
     const [isActive, setIsActive] = useState(getAlarmState().isActive);
     const [alarmMemo, setAlarmMemo] = useState<Memo | null>(getAlarmState().memo || null);
     const [alarmTrigger, setAlarmTrigger] = useState<Trigger | null>(getAlarmState().trigger || null);
+    const { updateTrigger } = useMemos();
 
     useEffect(() => {
         const unsubscribe = addAlarmListener((active, memo, trigger) => {
@@ -44,6 +45,9 @@ export default function AlarmOverlay() {
     }, [isActive]);
 
     const handleStop = async () => {
+        if (alarmTrigger?.id) {
+            await updateTrigger(alarmTrigger.id, { isActive: false });
+        }
         await stopAlarm();
         setIsActive(false);
     };
@@ -99,7 +103,17 @@ export default function AlarmOverlay() {
                             onPress={async () => {
                                 if (alarmTrigger?.id) {
                                     const { snoozeTrigger } = require('../services/schedulerService');
+                                    // 1. Calculate and store target in Context to re-render UI synchronously
+                                    const now = new Date();
+                                    const newTime = new Date(now.getTime() + s.val * 60 * 1000);
+                                    if (alarmTrigger.type === 'timer') {
+                                        await updateTrigger(alarmTrigger.id, { isActive: true, scheduledAt: newTime.toISOString() });
+                                    } else {
+                                        await updateTrigger(alarmTrigger.id, { isActive: true, scheduledAt: newTime.toISOString() });
+                                    }
+                                    // 2. Schedule Native Background Timer/Alarm
                                     await snoozeTrigger(alarmTrigger.id, s.val);
+
                                     await stopAlarm();
                                     setIsActive(false);
                                 }

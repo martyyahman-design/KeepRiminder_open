@@ -134,6 +134,14 @@ export default function RootLayout() {
                 }
             });
 
+            // AlarmStatusのグローバル監視
+            const { addAlarmListener } = require('../src/services/alarmService');
+            addAlarmListener((active: boolean) => {
+                if (!active) {
+                    setHasPendingAlarm(false);
+                }
+            });
+
             // ナビゲーション関数（不要になったが通知タップ用の安全装置として残す）
             const safeNavigate = (path: string) => {
                 router.push(path as any);
