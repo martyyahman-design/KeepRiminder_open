@@ -9,7 +9,7 @@
     "newArchEnabled": true,
     "scheme": "keepreminder",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/keepreminder_icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#1a1a2e"
     },

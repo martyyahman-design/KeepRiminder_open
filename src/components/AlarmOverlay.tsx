@@ -5,6 +5,7 @@ import {
     StyleSheet,
     TouchableOpacity,
     Dimensions,
+    BackHandler,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,6 +24,14 @@ export default function AlarmOverlay() {
     const [alarmTrigger, setAlarmTrigger] = useState<Trigger | null>(getAlarmState().trigger || null);
     const { updateTrigger } = useMemos();
 
+    const handleStop = async () => {
+        if (alarmTrigger?.id) {
+            await updateTrigger(alarmTrigger.id, { isActive: false });
+        }
+        await stopAlarm();
+        setIsActive(false);
+    };
+
     useEffect(() => {
         const unsubscribe = addAlarmListener((active, memo, trigger) => {
             setIsActive(active);
@@ -31,8 +40,26 @@ export default function AlarmOverlay() {
                 setAlarmTrigger(trigger || null);
             }
         });
-        return unsubscribe;
-    }, []);
+
+        // Android back button handling (Plan A: stop alarm and return)
+        const backAction = () => {
+            if (isActive) {
+                handleStop();
+                return true; // Prevent default behavior
+            }
+            return false;
+        };
+
+        const backHandler = BackHandler.addEventListener(
+            'hardwareBackPress',
+            backAction
+        );
+
+        return () => {
+            unsubscribe();
+            backHandler.remove();
+        };
+    }, [isActive, alarmTrigger]);
 
     // If the overlay is active, hide the splash screen immediately after the first UI draw
     useEffect(() => {
@@ -43,14 +70,6 @@ export default function AlarmOverlay() {
             }, 50);
         }
     }, [isActive]);
-
-    const handleStop = async () => {
-        if (alarmTrigger?.id) {
-            await updateTrigger(alarmTrigger.id, { isActive: false });
-        }
-        await stopAlarm();
-        setIsActive(false);
-    };
 
     if (!isActive) {
         return null;
