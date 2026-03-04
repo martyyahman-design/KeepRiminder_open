@@ -7,6 +7,7 @@ import * as TriggerRepo from '../database/repositories/triggerRepository';
 
 interface SyncContextType {
     isSyncing: boolean;
+    isInitialSyncDone: boolean;
     lastSyncedAt: Date | null;
     syncNow: () => Promise<void>;
 }
@@ -19,6 +20,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     const { accessToken, user } = useAuth();
     const { memos, refreshMemos } = useMemos();
     const [isSyncing, setIsSyncing] = useState(false);
+    const [isInitialSyncDone, setIsInitialSyncDone] = useState(false);
     const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
     const pullFromCloud = useCallback(async (token: string) => {
@@ -31,40 +33,52 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
                 // 1. Get local data
                 const localMemos = await MemoRepo.getAllMemos();
+                const localDeletedMemos = await MemoRepo.getDeletedMemos();
+                const allLocalMemos = [...localMemos, ...localDeletedMemos];
 
-                // 2. Merge Memos
+                // 2. Merge Memos (Last Write Wins)
                 if (cloudData.memos) {
+                    let hasChanges = false;
                     for (const cloudMemo of cloudData.memos) {
-                        const localMemo = localMemos.find(m => m.id === cloudMemo.id);
+                        const localMemo = allLocalMemos.find(m => m.id === cloudMemo.id);
 
                         // Cloud memo is newer or doesn't exist locally
-                        if (!localMemo || new Date(cloudMemo.updatedAt) > new Date(localMemo.updatedAt)) {
+                        if (!localMemo || new Date(cloudMemo.updatedAt).getTime() > new Date(localMemo.updatedAt).getTime()) {
                             await MemoRepo.upsertMemo(cloudMemo);
                             if (cloudMemo.triggers) {
                                 for (const trigger of cloudMemo.triggers) {
                                     await TriggerRepo.upsertTrigger(trigger);
                                 }
                             }
+                            hasChanges = true;
                         }
+                    }
+                    if (hasChanges) {
+                        await refreshMemos();
                     }
                 }
 
                 setLastSyncedAt(new Date());
-                await refreshMemos();
             }
         } catch (error) {
             console.error('Failed to pull from cloud:', error);
         } finally {
             setIsSyncing(false);
+            setIsInitialSyncDone(true);
         }
     }, [refreshMemos]);
 
     const pushToCloud = useCallback(async (token: string) => {
         setIsSyncing(true);
         try {
+            // Get the very latest data from DB before pushing
+            const localMemos = await MemoRepo.getAllMemos();
+            const localDeletedMemos = await MemoRepo.getDeletedMemos();
+            const allLocalMemos = [...localMemos, ...localDeletedMemos];
+
             const fileId = await GoogleDriveService.findFile(token, DB_FILE_NAME);
             const dataToUpload = {
-                memos: memos, // MemoWithTriggers include triggers
+                memos: allLocalMemos,
                 version: 1,
                 updatedAt: new Date().toISOString()
             };
@@ -75,28 +89,33 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         } finally {
             setIsSyncing(false);
         }
-    }, [memos]);
+    }, []);
 
     useEffect(() => {
         if (accessToken) {
             pullFromCloud(accessToken);
+        } else {
+            setIsInitialSyncDone(true); // No token, so initial "sync" (or wait for one) is technically done
         }
     }, [accessToken, pullFromCloud]);
 
     // Auto-save: push to cloud when memos change (with debounce)
     useEffect(() => {
-        if (!accessToken || isSyncing) return;
+        if (!accessToken || isSyncing || !isInitialSyncDone) return;
 
         const timer = setTimeout(() => {
             pushToCloud(accessToken);
         }, 5000); // 5 seconds debounce
 
         return () => clearTimeout(timer);
-    }, [memos, accessToken]);
+    }, [memos, accessToken, isInitialSyncDone, pushToCloud]);
 
     return (
         <SyncContext.Provider value={{
-            isSyncing, lastSyncedAt, syncNow: async () => {
+            isSyncing,
+            isInitialSyncDone,
+            lastSyncedAt,
+            syncNow: async () => {
                 if (accessToken) await pushToCloud(accessToken);
             }
         }}>

@@ -47,7 +47,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 scopes: ['https://www.googleapis.com/auth/drive.appdata'],
                 offlineAccess: false,
             });
-            setLoading(false);
+
+            // Try to sign in silently on launch
+            const trySilentSignIn = async () => {
+                try {
+                    const isSignedIn = await GoogleSignin.isSignedIn();
+                    if (isSignedIn) {
+                        const userInfo = await GoogleSignin.signInSilently();
+                        const tokens = await GoogleSignin.getTokens();
+                        setAccessToken(tokens.accessToken);
+                        setUser({
+                            id: userInfo.data?.user.id ?? '',
+                            email: userInfo.data?.user.email ?? '',
+                            name: userInfo.data?.user.name ?? undefined,
+                            photo: userInfo.data?.user.photo ?? undefined,
+                        });
+                    }
+                } catch (error) {
+                    console.log('Silent sign-in failed:', error);
+                } finally {
+                    setLoading(false);
+                }
+            };
+            trySilentSignIn();
         }
     }, []);
 

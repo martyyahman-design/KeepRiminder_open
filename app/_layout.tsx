@@ -15,15 +15,43 @@ import { Colors } from '../src/theme';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Linking from 'expo-linking';
 import AlarmOverlay from '../src/components/AlarmOverlay';
+import { useAuth } from '../src/contexts/AuthContext';
+import { useSync } from '../src/contexts/SyncContext';
+import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 
 SplashScreen.preventAutoHideAsync();
 
 // Ignore Expo's "Unable to activate keep awake" unhandled promise rejection during dev
 LogBox.ignoreLogs(['Unable to activate keep awake']);
 
+function SyncIndicator() {
+    const { isSyncing } = useSync();
+
+    if (!isSyncing) return null;
+
+    return (
+        <View style={styles.syncIndicator}>
+            <ActivityIndicator size="small" color="#999" />
+        </View>
+    );
+}
+
 export default function RootLayout() {
+    return (
+        <AuthProvider>
+            <MemoProvider>
+                <SyncProvider>
+                    <RootLayoutContent />
+                </SyncProvider>
+            </MemoProvider>
+        </AuthProvider>
+    );
+}
+
+function RootLayoutContent() {
     const colorScheme = useColorScheme();
     const colors = colorScheme === 'dark' ? Colors.dark : Colors.light;
+    const { loading: authLoading } = useAuth();
     const segments = useSegments();
     const currentSegmentsRef = useRef(segments);
     const isInitializingRef = useRef(false);
@@ -196,71 +224,81 @@ export default function RootLayout() {
 
     // Keep splash screen visible until initialization completes AND the first render happens
     useEffect(() => {
-        // Only hide splash screen automatically if there is NO pending alarm.
-        // If there IS a pending alarm, AlarmOverlay.tsx will take over hiding it after its own mount.
-        if (isAppReady && !hasPendingAlarm) {
-            // Add a small artificial delay to ensure React Native has committed the native View layers
+        if (isAppReady && !authLoading && !hasPendingAlarm) {
             setTimeout(() => {
                 SplashScreen.hideAsync().catch(console.warn);
             }, 100);
         }
-    }, [isAppReady, hasPendingAlarm]);
+    }, [isAppReady, authLoading, hasPendingAlarm]);
+
+    if (!isAppReady || authLoading) {
+        return null; // Keep splash screen visible
+    }
 
     return (
-        <AuthProvider>
-            <MemoProvider>
-                <SyncProvider>
-                    <StatusBar style={colors.statusBar} />
-                    {hasPendingAlarm ? (
-                        <AlarmOverlay />
-                    ) : (
-                        <>
-                            <AlarmOverlay />
-                            <Stack
-                                screenOptions={{
-                                    headerStyle: {
-                                        backgroundColor: colors.background,
-                                    },
-                                    headerTintColor: colors.text,
-                                    headerShadowVisible: false,
-                                    contentStyle: {
-                                        backgroundColor: colors.background,
-                                    },
-                                    animation: 'slide_from_right',
-                                }}
-                            >
-                                <Stack.Screen
-                                    name="(tabs)"
-                                    options={{ headerShown: false }}
-                                />
-                                <Stack.Screen
-                                    name="memo/[id]"
-                                    options={{
-                                        title: 'メモ',
-                                        headerBackTitle: '戻る',
-                                    }}
-                                />
-                                <Stack.Screen
-                                    name="trigger/edit"
-                                    options={{
-                                        title: 'トリガー設定',
-                                        headerBackTitle: '戻る',
-                                        presentation: 'modal',
-                                    }}
-                                />
-                                <Stack.Screen
-                                    name="alarm"
-                                    options={{
-                                        headerShown: false,
-                                        presentation: 'fullScreenModal',
-                                        gestureEnabled: false,
-                                    }}
-                                />
-                            </Stack>
-                        </>
-                    )}
-                </SyncProvider>
-            </MemoProvider>
-        </AuthProvider>
+        <>
+            <StatusBar style={colors.statusBar} />
+            {hasPendingAlarm ? (
+                <AlarmOverlay />
+            ) : (
+                <>
+                    <AlarmOverlay />
+                    <SyncIndicator />
+                    <Stack
+                        screenOptions={{
+                            headerStyle: {
+                                backgroundColor: colors.background,
+                            },
+                            headerTintColor: colors.text,
+                            headerShadowVisible: false,
+                            contentStyle: {
+                                backgroundColor: colors.background,
+                            },
+                            animation: 'slide_from_right',
+                        }}
+                    >
+                        <Stack.Screen
+                            name="(tabs)"
+                            options={{ headerShown: false }}
+                        />
+                        <Stack.Screen
+                            name="memo/[id]"
+                            options={{
+                                title: 'メモ',
+                                headerBackTitle: '戻る',
+                            }}
+                        />
+                        <Stack.Screen
+                            name="trigger/edit"
+                            options={{
+                                title: 'トリガー設定',
+                                headerBackTitle: '戻る',
+                                presentation: 'modal',
+                            }}
+                        />
+                        <Stack.Screen
+                            name="alarm"
+                            options={{
+                                headerShown: false,
+                                presentation: 'fullScreenModal',
+                                gestureEnabled: false,
+                            }}
+                        />
+                    </Stack>
+                </>
+            )}
+        </>
     );
 }
+
+const styles = StyleSheet.create({
+    syncIndicator: {
+        position: 'absolute',
+        top: 55,
+        right: 15,
+        zIndex: 9999,
+    },
+    syncText: {
+        display: 'none',
+    },
+});
