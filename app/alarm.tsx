@@ -1,193 +1,50 @@
 import React, { useEffect } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    TouchableOpacity,
-    Dimensions,
-} from 'react-native';
-import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { stopAlarm, getAlarmState, addAlarmListener } from '../src/services/alarmService';
-import { Spacing, FontSize, BorderRadius, useThemeColors, getCardShadow } from '../src/theme';
+import { router, useLocalSearchParams } from 'expo-router';
+import { getAlarmState, startAlarm } from '../src/services/alarmService';
+import { getMemo } from '../src/database/repositories/memoRepository';
+import { getTrigger } from '../src/database/repositories/triggerRepository';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
+/**
+ * Headless route receiver for Expo Router Deep Links.
+ * Instead of rendering UI here and suffering navigation push delays/flickers,
+ * this simply reads the parameters, triggers the global AlarmOverlay,
+ * and immediately redirects back to the Home screen behind the scenes.
+ */
 export default function AlarmScreen() {
+    const params = useLocalSearchParams();
     const alarmState = getAlarmState();
-    const colors = useThemeColors();
+    const hasInitialized = React.useRef(false);
 
     useEffect(() => {
-        const unsubscribe = addAlarmListener((active) => {
-            if (!active) {
-                router.back();
+        const initDirectAlarmIfNeeded = async () => {
+            if (hasInitialized.current) return;
+            hasInitialized.current = true;
+
+            if (params.memoId && params.triggerId && !alarmState.isActive) {
+                console.log('Deep-link received. Triggering global overlay and returning to root...');
+                try {
+                    const memo = await getMemo(params.memoId as string);
+                    const trigger = await getTrigger(params.triggerId as string);
+                    if (memo && trigger && trigger.isActive) {
+                        await startAlarm(memo, trigger);
+                    } else if (memo) {
+                        // Already inactive, route to memo detail behind the scenes
+                        router.replace(`/memo/${memo.id}`);
+                        return;
+                    }
+                } catch (e) {
+                    console.error('Failed to init direct alarm from link:', e);
+                }
             }
-        });
-        return unsubscribe;
-    }, []);
 
-    const handleStop = async () => {
-        await stopAlarm();
-        router.back();
-    };
+            // Always clear this route from the stack so the user doesn't get stuck on a blank page
+            // The AlarmOverlay is currently visible on top of everything anyway.
+            router.replace('/');
+        };
 
-    return (
-        <View style={styles.container}>
-            {/* Pulsing background effect */}
-            <View style={styles.pulseOuter} />
-            <View style={styles.pulseMiddle} />
+        // Adding a slight delay to ensure RootLayout has mounted before we push
+        setTimeout(initDirectAlarmIfNeeded, 50);
+    }, [params.memoId, params.triggerId]);
 
-            <View style={styles.content}>
-                {/* Icon */}
-                <View style={styles.iconContainer}>
-                    <Ionicons name="alarm" size={64} color="#FFFFFF" />
-                </View>
-
-                {/* Title */}
-                <Text style={styles.title}>
-                    {alarmState.memo?.title || 'アラーム'}
-                </Text>
-
-                {/* Content */}
-                {alarmState.memo?.content ? (
-                    <Text style={styles.body}>
-                        {alarmState.memo.content}
-                    </Text>
-                ) : null}
-
-                {/* Trigger info */}
-                {alarmState.trigger && (
-                    <Text style={styles.triggerInfo}>
-                        {alarmState.trigger.type === 'datetime' ? '⏰ 予定時刻' :
-                            alarmState.trigger.type === 'timer' ? '⏱ タイマー終了' :
-                                alarmState.trigger.type === 'location_enter' ? `📍 ${alarmState.trigger.locationName || '場所'}に到着` :
-                                    `📍 ${alarmState.trigger.locationName || '場所'}から離脱`}
-                    </Text>
-                )}
-
-                {/* Snooze Buttons */}
-                <View style={styles.snoozeContainer}>
-                    {[
-                        { label: '1分', val: 1 },
-                        { label: '5分', val: 5 },
-                        { label: '1時間', val: 60 },
-                    ].map((s) => (
-                        <TouchableOpacity
-                            key={s.val}
-                            style={styles.snoozeButton}
-                            onPress={async () => {
-                                if (alarmState.trigger?.id) {
-                                    const { snoozeTrigger } = require('../src/services/schedulerService');
-                                    await snoozeTrigger(alarmState.trigger.id, s.val);
-                                    router.back();
-                                }
-                            }}
-                        >
-                            <Text style={styles.snoozeText}>{s.label}</Text>
-                        </TouchableOpacity>
-                    ))}
-                </View>
-
-                {/* Stop Button */}
-                <TouchableOpacity
-                    style={[styles.stopButton, { ...getCardShadow(colors) }]}
-                    onPress={handleStop}
-                    activeOpacity={0.7}
-                >
-                    <Text style={styles.stopButtonText}>停止</Text>
-                </TouchableOpacity>
-            </View>
-        </View>
-    );
+    return null;
 }
-
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#1A1A2E',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    pulseOuter: {
-        position: 'absolute',
-        width: SCREEN_WIDTH * 1.5,
-        height: SCREEN_WIDTH * 1.5,
-        borderRadius: SCREEN_WIDTH * 0.75,
-        backgroundColor: 'rgba(108, 92, 231, 0.08)',
-    },
-    pulseMiddle: {
-        position: 'absolute',
-        width: SCREEN_WIDTH,
-        height: SCREEN_WIDTH,
-        borderRadius: SCREEN_WIDTH * 0.5,
-        backgroundColor: 'rgba(108, 92, 231, 0.15)',
-    },
-    content: {
-        alignItems: 'center',
-        padding: Spacing.xxxl,
-        width: '100%',
-    },
-    iconContainer: {
-        width: 120,
-        height: 120,
-        borderRadius: 60,
-        backgroundColor: 'rgba(108, 92, 231, 0.3)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: Spacing.xxxl,
-    },
-    title: {
-        fontSize: FontSize.xxxl,
-        fontWeight: '800',
-        color: '#FFFFFF',
-        textAlign: 'center',
-        marginBottom: Spacing.md,
-    },
-    body: {
-        fontSize: FontSize.lg,
-        color: 'rgba(255, 255, 255, 0.7)',
-        textAlign: 'center',
-        marginBottom: Spacing.xl,
-        lineHeight: 26,
-        paddingHorizontal: Spacing.xl,
-    },
-    triggerInfo: {
-        fontSize: FontSize.md,
-        color: 'rgba(162, 155, 254, 0.9)',
-        textAlign: 'center',
-        marginBottom: Spacing.xxxl,
-    },
-    stopButton: {
-        width: 160,
-        height: 160,
-        borderRadius: 80,
-        backgroundColor: '#FF6B6B',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginTop: Spacing.xxl,
-    },
-    stopButtonText: {
-        fontSize: FontSize.xxl,
-        fontWeight: '800',
-        color: '#FFFFFF',
-        letterSpacing: 2,
-    },
-    snoozeContainer: {
-        flexDirection: 'row',
-        gap: Spacing.md,
-        marginBottom: Spacing.xxl,
-    },
-    snoozeButton: {
-        paddingHorizontal: Spacing.xl,
-        paddingVertical: Spacing.md,
-        borderRadius: BorderRadius.full,
-        backgroundColor: 'rgba(255, 255, 255, 0.15)',
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.3)',
-    },
-    snoozeText: {
-        color: '#FFFFFF',
-        fontSize: FontSize.md,
-        fontWeight: '700',
-    },
-});

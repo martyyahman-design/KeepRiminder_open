@@ -313,19 +313,29 @@ class SQLiteAdapter implements DatabaseAdapter {
 }
 
 let adapter: DatabaseAdapter | null = null;
+let initPromise: Promise<DatabaseAdapter> | null = null;
 
 export async function getDatabase(): Promise<DatabaseAdapter> {
   if (adapter) return adapter;
+  if (initPromise) return initPromise;
 
-  if (Platform.OS === 'web') {
-    adapter = new InMemoryAdapter();
-  } else {
-    const sqliteDb = await initSQLite();
-    db = sqliteDb;
-    adapter = new SQLiteAdapter(sqliteDb);
-  }
+  initPromise = (async () => {
+    try {
+      if (Platform.OS === 'web') {
+        adapter = new InMemoryAdapter();
+      } else {
+        const sqliteDb = await initSQLite();
+        db = sqliteDb;
+        adapter = new SQLiteAdapter(sqliteDb);
+      }
+      return adapter;
+    } finally {
+      // Clear the promise once initialization is completed or failed
+      initPromise = null;
+    }
+  })();
 
-  return adapter;
+  return initPromise;
 }
 
 export async function closeDatabase(): Promise<void> {

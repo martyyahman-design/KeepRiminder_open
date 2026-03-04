@@ -557,14 +557,20 @@ export default function MemoListScreen() {
                             <View style={[styles.line, { backgroundColor: colors.border }]} />
                         </View>
 
-                        <View style={styles.filterContainerResponsive}>
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            style={{ marginHorizontal: -Spacing.lg, paddingHorizontal: Spacing.lg, marginBottom: Spacing.lg, marginTop: -Spacing.sm }}
+                            contentContainerStyle={{ gap: 8, paddingRight: Spacing.lg * 2 }}
+                        >
                             {(['all', 'timer', 'todo', 'datetime', 'location', 'tag'] as const).map((type) => (
                                 <TouchableOpacity
                                     key={type}
                                     activeOpacity={0.7}
                                     style={[
                                         styles.filterChipInside,
-                                        filterType === type && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }
+                                        filterType === type && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary },
+                                        { marginBottom: 0, marginTop: 0 } // ScrollView内では無効化
                                     ]}
                                     onPress={() => {
                                         if (type === 'tag') {
@@ -600,7 +606,7 @@ export default function MemoListScreen() {
                                     </Text>
                                 </TouchableOpacity>
                             ))}
-                        </View>
+                        </ScrollView>
 
 
                     </View>
@@ -829,12 +835,13 @@ const styles = StyleSheet.create({
     fab: {
         position: 'absolute',
         right: Spacing.xl,
-        bottom: 30,
+        bottom: 110,
         width: 56,
         height: 56,
         borderRadius: 28,
         justifyContent: 'center',
         alignItems: 'center',
+        zIndex: 100,
     },
     todaySection: {
         marginBottom: Spacing.xxl,

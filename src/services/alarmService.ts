@@ -25,15 +25,15 @@ function notifyListeners(): void {
 
 export async function startAlarm(memo: Memo, trigger: Trigger): Promise<void> {
     if (Platform.OS === 'web') return;
-    // Stop any existing alarm first
-    await stopAlarm();
+    // Stop any existing alarm first, but don't notify listeners to prevent bouncing
+    await stopAlarm(false);
 
     isAlarmActive = true;
     currentAlarmMemo = memo;
     currentAlarmTrigger = trigger;
 
     // Also send a notification so user can see it
-    await sendNotification(memo, trigger, '⏰ アラーム！タップして停止');
+    // await sendNotification(memo, trigger, '⏰ アラーム！タップして停止');
 
     try {
         // Set audio mode for alarm
@@ -70,7 +70,7 @@ export async function startAlarm(memo: Memo, trigger: Trigger): Promise<void> {
     notifyListeners();
 }
 
-export async function stopAlarm(): Promise<void> {
+export async function stopAlarm(notify: boolean = true): Promise<void> {
     isAlarmActive = false;
 
     // Stop sound
@@ -87,10 +87,30 @@ export async function stopAlarm(): Promise<void> {
     // Stop vibration
     stopVibration();
 
+    // Deactivate trigger in DB so tapping the old notification won't restart the alarm
+    if (currentAlarmTrigger?.id) {
+        try {
+            const { updateTrigger } = require('../database/repositories/triggerRepository');
+            await updateTrigger(currentAlarmTrigger.id, { isActive: false });
+        } catch (e) {
+            console.error('Failed to deactivate alarm trigger in DB:', e);
+        }
+    }
+
+    // Dismiss any lingering alarm notifications from the tray
+    try {
+        const Notifications = require('expo-notifications');
+        await Notifications.dismissAllNotificationsAsync();
+    } catch (e) {
+        console.error('Failed to dismiss notifications:', e);
+    }
+
     currentAlarmMemo = null;
     currentAlarmTrigger = null;
 
-    notifyListeners();
+    if (notify) {
+        notifyListeners();
+    }
 }
 
 function startVibration(): void {

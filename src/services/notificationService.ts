@@ -4,13 +4,18 @@ import { Memo, Trigger } from '../types/models';
 
 // Configure notification handler
 Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-        shouldShowBanner: true,
-        shouldShowList: true,
-    }),
+    handleNotification: async (notification) => {
+        const data = notification.request.content.data as any;
+        const isAlarm = data && data.actionType === 'alarm';
+
+        return {
+            shouldShowAlert: !isAlarm,
+            shouldPlaySound: !isAlarm,
+            shouldSetBadge: true,
+            shouldShowBanner: !isAlarm,
+            shouldShowList: true,
+        };
+    },
 });
 
 export async function requestNotificationPermissions(): Promise<boolean> {
