@@ -5,6 +5,7 @@ import {
     GoogleSignin,
     statusCodes,
 } from '@react-native-google-signin/google-signin';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface User {
     id: string;
@@ -22,6 +23,8 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const HAS_LOGGED_IN_KEY = '@KeepReminder:has_logged_in';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
@@ -41,18 +44,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             document.head.appendChild(script);
         } else {
             // Configure Google Sign-In for native (Android / iOS)
-            // webClientId は必須。AndroidはSHA-1フィンガープリントでGCPと紐付け済みなので自動認識される。
             GoogleSignin.configure({
                 webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
                 scopes: ['https://www.googleapis.com/auth/drive.appdata'],
-                offlineAccess: false,
+                offlineAccess: true, // リフレッシュトークンを要求し、セッション維持を強化
             });
 
             // Try to sign in silently on launch
             const trySilentSignIn = async () => {
                 try {
-                    const isSignedIn = await GoogleSignin.isSignedIn();
-                    if (isSignedIn) {
+                    const hasLoggedIn = await AsyncStorage.getItem(HAS_LOGGED_IN_KEY);
+                    const hasPrevious = await GoogleSignin.hasPreviousSignIn();
+
+                    if (hasLoggedIn === 'true' || hasPrevious) {
+                        console.log('Detected previous sign-in. Attempting silent sign-in...');
                         const userInfo = await GoogleSignin.signInSilently();
                         const tokens = await GoogleSignin.getTokens();
                         setAccessToken(tokens.accessToken);
@@ -62,9 +67,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                             name: userInfo.data?.user.name ?? undefined,
                             photo: userInfo.data?.user.photo ?? undefined,
                         });
+                        // 念のためフラグを再設定
+                        await AsyncStorage.setItem(HAS_LOGGED_IN_KEY, 'true');
+                    } else {
+                        console.log('No previous sign-in detected.');
                     }
                 } catch (error) {
-                    console.log('Silent sign-in failed:', error);
+                    console.log('Silent sign-in failed or no session:', error);
+                    // セッションが完全に無効な場合はフラグを消す（任意だが確実性のために残す）
+                    // await AsyncStorage.removeItem(HAS_LOGGED_IN_KEY);
                 } finally {
                     setLoading(false);
                 }
@@ -125,6 +136,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     name: userInfo.data?.user.name ?? undefined,
                     photo: userInfo.data?.user.photo ?? undefined,
                 });
+                // ログイン成功時にフラグを保存
+                await AsyncStorage.setItem(HAS_LOGGED_IN_KEY, 'true');
             } catch (error: any) {
                 if (error.code === statusCodes.SIGN_IN_CANCELLED) {
                     console.log('サインインがキャンセルされました');
@@ -168,6 +181,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             } finally {
                 setUser(null);
                 setAccessToken(null);
+                // ログアウト時にフラグを削除
+                await AsyncStorage.removeItem(HAS_LOGGED_IN_KEY);
             }
         }
     };
