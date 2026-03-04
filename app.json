@@ -8,6 +8,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "scheme": "keepreminder",
+    "baseUrl": "/KeepRiminder_open/",
     "splash": {
       "image": "./assets/keepreminder_icon.png",
       "resizeMode": "contain",
@@ -91,6 +92,9 @@
           "sounds": []
         }
       ]
-    ]
+    ],
+    "experiments": {
+      "baseUrl": "/KeepRiminder_open"
+    }
   }
 }
