@@ -1,11 +1,9 @@
 import { Audio } from 'expo-av';
-import * as Haptics from 'expo-haptics';
-import { Platform, AppState, AppStateStatus } from 'react-native';
+import { Platform, Vibration } from 'react-native';
 import { Memo, Trigger } from '../types/models';
 import { sendNotification } from './notificationService';
 
 let currentSound: Audio.Sound | null = null;
-let vibrationInterval: ReturnType<typeof setInterval> | null = null;
 let isAlarmActive = false;
 let currentAlarmMemo: Memo | null = null;
 let currentAlarmTrigger: Trigger | null = null;
@@ -47,15 +45,13 @@ export async function startAlarm(memo: Memo, trigger: Trigger): Promise<void> {
 
         // Try to load alarm sound
         try {
-            // Attempt to use a bundled alarm sound if available
+            // Use local bundled melodic sound
             const { sound } = await Audio.Sound.createAsync(
-                { uri: 'https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg' },
-                {
-                    isLooping: true,
-                    volume: 1.0,
-                    shouldPlay: true,
-                }
+                require('../../assets/sounds/melodic_alarm.wav')
             );
+            await sound.setIsLoopingAsync(true);
+            await sound.setVolumeAsync(1.0);
+            await sound.playAsync();
             currentSound = sound;
         } catch (soundErr) {
             console.warn('Could not load alarm sound, continuing with vibration only:', soundErr);
@@ -114,27 +110,17 @@ export async function stopAlarm(notify: boolean = true): Promise<void> {
 }
 
 function startVibration(): void {
-    if (vibrationInterval) clearInterval(vibrationInterval);
+    if (Platform.OS === 'web') return;
 
-    // Vibrate every second
-    vibrationInterval = setInterval(async () => {
-        if (!isAlarmActive) {
-            stopVibration();
-            return;
-        }
-        try {
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        } catch {
-            // ignore on web or unsupported
-        }
-    }, 1000);
+    // Pattern: wait 0ms, vibrate 1000ms, wait 1000ms
+    const PATTERN = [0, 1000, 1000];
+    // true = repeat the pattern
+    Vibration.vibrate(PATTERN, true);
 }
 
 function stopVibration(): void {
-    if (vibrationInterval) {
-        clearInterval(vibrationInterval);
-        vibrationInterval = null;
-    }
+    if (Platform.OS === 'web') return;
+    Vibration.cancel();
 }
 
 export function getAlarmState(): {
