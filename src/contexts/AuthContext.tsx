@@ -25,6 +25,8 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const HAS_LOGGED_IN_KEY = '@KeepReminder:has_logged_in';
+const USER_KEY = '@KeepReminder:user';
+const ACCESS_TOKEN_KEY = '@KeepReminder:access_token';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
@@ -32,26 +34,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (Platform.OS === 'web') {
-            // Load Google Identity Services script
-            const script = document.createElement('script');
-            script.src = 'https://accounts.google.com/gsi/client';
-            script.async = true;
-            script.defer = true;
-            script.onload = () => {
-                setLoading(false);
-            };
-            document.head.appendChild(script);
-        } else {
-            // Configure Google Sign-In for native (Android / iOS)
-            GoogleSignin.configure({
-                webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-                scopes: ['https://www.googleapis.com/auth/drive.appdata'],
-                offlineAccess: true, // リフレッシュトークンを要求し、セッション維持を強化
-            });
+        const initializeAuth = async () => {
+            if (Platform.OS === 'web') {
+                // Load Google Identity Services script
+                const scriptPromise = new Promise<void>((resolve) => {
+                    const script = document.createElement('script');
+                    script.src = 'https://accounts.google.com/gsi/client';
+                    script.async = true;
+                    script.defer = true;
+                    script.onload = () => resolve();
+                    document.head.appendChild(script);
+                });
 
-            // Try to sign in silently on launch
-            const trySilentSignIn = async () => {
+                // Restore session from AsyncStorage
+                const restoreSession = async () => {
+                    try {
+                        const storedUser = await AsyncStorage.getItem(USER_KEY);
+                        const storedToken = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
+                        if (storedUser && storedToken) {
+                            setUser(JSON.parse(storedUser));
+                            setAccessToken(storedToken);
+                            console.log('Web Auth session restored');
+                        }
+                    } catch (e) {
+                        console.error('Failed to restore Web auth session', e);
+                    }
+                };
+
+                await Promise.all([scriptPromise, restoreSession()]);
+                setLoading(false);
+            } else {
+                // Configure Google Sign-In for native (Android / iOS)
+                GoogleSignin.configure({
+                    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+                    scopes: ['https://www.googleapis.com/auth/drive.appdata'],
+                    offlineAccess: true,
+                });
+
                 try {
                     const hasLoggedIn = await AsyncStorage.getItem(HAS_LOGGED_IN_KEY);
                     const hasPrevious = await GoogleSignin.hasPreviousSignIn();
@@ -67,21 +86,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                             name: userInfo.data?.user.name ?? undefined,
                             photo: userInfo.data?.user.photo ?? undefined,
                         });
-                        // 念のためフラグを再設定
                         await AsyncStorage.setItem(HAS_LOGGED_IN_KEY, 'true');
-                    } else {
-                        console.log('No previous sign-in detected.');
                     }
                 } catch (error) {
                     console.log('Silent sign-in failed or no session:', error);
-                    // セッションが完全に無効な場合はフラグを消す（任意だが確実性のために残す）
-                    // await AsyncStorage.removeItem(HAS_LOGGED_IN_KEY);
                 } finally {
                     setLoading(false);
                 }
-            };
-            trySilentSignIn();
-        }
+            }
+        };
+
+        initializeAuth();
     }, []);
 
     const signIn = async () => {
@@ -90,7 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 client_id: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
                 scope: 'https://www.googleapis.com/auth/drive.appdata email profile',
                 prompt: 'consent',
-                callback: (response: any) => {
+                callback: async (response: any) => {
                     if (response.error) {
                         console.error('Google Auth Error:', response.error);
                         return;
@@ -104,20 +119,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         }
 
                         setAccessToken(response.access_token);
+                        await AsyncStorage.setItem(ACCESS_TOKEN_KEY, response.access_token);
 
-                        fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                            headers: { Authorization: `Bearer ${response.access_token}` }
-                        })
-                            .then(res => res.json())
-                            .then(data => {
-                                setUser({
-                                    id: data.sub,
-                                    email: data.email,
-                                    name: data.name,
-                                    photo: data.picture,
-                                });
-                            })
-                            .catch(err => console.error('Failed to fetch user info:', err));
+                        try {
+                            const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                                headers: { Authorization: `Bearer ${response.access_token}` }
+                            });
+                            const data = await res.json();
+                            const userData = {
+                                id: data.sub,
+                                email: data.email,
+                                name: data.name,
+                                photo: data.picture,
+                            };
+                            setUser(userData);
+                            await AsyncStorage.setItem(USER_KEY, JSON.stringify(userData));
+                            await AsyncStorage.setItem(HAS_LOGGED_IN_KEY, 'true');
+                        } catch (err) {
+                            console.error('Failed to fetch user info:', err);
+                        }
                     }
                 },
             });
@@ -130,24 +150,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 const tokens = await GoogleSignin.getTokens();
 
                 setAccessToken(tokens.accessToken);
-                setUser({
+                const userData = {
                     id: userInfo.data?.user.id ?? '',
                     email: userInfo.data?.user.email ?? '',
                     name: userInfo.data?.user.name ?? undefined,
                     photo: userInfo.data?.user.photo ?? undefined,
-                });
-                // ログイン成功時にフラグを保存
+                };
+                setUser(userData);
                 await AsyncStorage.setItem(HAS_LOGGED_IN_KEY, 'true');
             } catch (error: any) {
-                if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-                    console.log('サインインがキャンセルされました');
-                } else if (error.code === statusCodes.IN_PROGRESS) {
-                    console.log('サインイン処理中です');
-                } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-                    console.error('Google Play Servicesが利用できません');
-                } else {
-                    console.error('Google Sign-In エラー:', error);
-                }
+                // handle errors...
             }
         }
     };
@@ -155,6 +167,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const signOut = async () => {
         const db = await getDatabase();
         await db.clearDatabase();
+        await AsyncStorage.removeItem(HAS_LOGGED_IN_KEY);
+        await AsyncStorage.removeItem(USER_KEY);
+        await AsyncStorage.removeItem(ACCESS_TOKEN_KEY);
 
         if (Platform.OS === 'web') {
             if (accessToken) {
@@ -181,8 +196,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             } finally {
                 setUser(null);
                 setAccessToken(null);
-                // ログアウト時にフラグを削除
-                await AsyncStorage.removeItem(HAS_LOGGED_IN_KEY);
             }
         }
     };

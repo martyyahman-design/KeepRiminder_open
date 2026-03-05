@@ -80,22 +80,34 @@ export default function MemoListScreen() {
 
     const handleBulkDelete = useCallback(async () => {
         if (selectedIds.size === 0) return;
-        Alert.alert(
-            `${selectedIds.size}件のメモを削除`,
-            'ごみ箱に移動しますか？',
-            [
-                { text: 'キャンセル', style: 'cancel' },
-                {
-                    text: 'ごみ箱に移動',
-                    style: 'destructive',
-                    onPress: async () => {
-                        await Promise.all(Array.from(selectedIds).map(id => deleteMemo(id)));
-                        setSelectedIds(new Set());
-                        setSelectionMode(false);
-                    }
-                },
-            ]
-        );
+
+        const title = `${selectedIds.size}件のメモを削除`;
+        const message = 'ごみ箱に移動しますか？';
+
+        if (Platform.OS === 'web') {
+            if (window.confirm(`${title}\n\n${message}`)) {
+                await Promise.all(Array.from(selectedIds).map(id => deleteMemo(id)));
+                setSelectedIds(new Set());
+                setSelectionMode(false);
+            }
+        } else {
+            Alert.alert(
+                title,
+                message,
+                [
+                    { text: 'キャンセル', style: 'cancel' },
+                    {
+                        text: 'ごみ箱に移動',
+                        style: 'destructive',
+                        onPress: async () => {
+                            await Promise.all(Array.from(selectedIds).map(id => deleteMemo(id)));
+                            setSelectedIds(new Set());
+                            setSelectionMode(false);
+                        }
+                    },
+                ]
+            );
+        }
     }, [selectedIds, deleteMemo]);
 
     const toggleSelect = useCallback((id: string) => {

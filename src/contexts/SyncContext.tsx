@@ -39,6 +39,17 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
                 // 2. Merge Memos (Last Write Wins)
                 if (cloudData.memos) {
                     let hasChanges = false;
+                    const cloudMemoIds = new Set(cloudData.memos.map((m: any) => m.id));
+
+                    // Check for local memos that should be deleted (hard delete on other device)
+                    for (const localMemo of allLocalMemos) {
+                        if (!cloudMemoIds.has(localMemo.id)) {
+                            console.log(`Memo ${localMemo.id} missing from cloud. Hard deleting locally.`);
+                            await MemoRepo.permanentlyDeleteMemo(localMemo.id);
+                            hasChanges = true;
+                        }
+                    }
+
                     for (const cloudMemo of cloudData.memos) {
                         const localMemo = allLocalMemos.find(m => m.id === cloudMemo.id);
 
@@ -105,10 +116,22 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
         const timer = setTimeout(() => {
             pushToCloud(accessToken);
-        }, 5000); // 5 seconds debounce
+        }, 3000); // Reduce to 3 seconds debounce
 
         return () => clearTimeout(timer);
     }, [memos, accessToken, isInitialSyncDone, pushToCloud]);
+
+    // Background Polling: pull from cloud every 60 seconds
+    useEffect(() => {
+        if (!accessToken || isSyncing) return;
+
+        const interval = setInterval(() => {
+            console.log('Auto-polling from cloud...');
+            pullFromCloud(accessToken);
+        }, 60000); // 60 seconds
+
+        return () => clearInterval(interval);
+    }, [accessToken, pullFromCloud, isSyncing]);
 
     return (
         <SyncContext.Provider value={{

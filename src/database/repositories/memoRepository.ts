@@ -123,12 +123,13 @@ export async function updateMemo(
 export async function deleteMemo(id: string): Promise<void> {
     const db = await getDatabase();
     const now = new Date().toISOString();
-    await db.runAsync('UPDATE memos SET deletedAt = ? WHERE id = ?', [now, id]);
+    await db.runAsync('UPDATE memos SET deletedAt = ?, updatedAt = ? WHERE id = ?', [now, now, id]);
 }
 
 export async function restoreMemo(id: string): Promise<void> {
     const db = await getDatabase();
-    await db.runAsync('UPDATE memos SET deletedAt = NULL WHERE id = ?', [id]);
+    const now = new Date().toISOString();
+    await db.runAsync('UPDATE memos SET deletedAt = NULL, updatedAt = ? WHERE id = ?', [now, id]);
 }
 
 export async function permanentlyDeleteMemo(id: string): Promise<void> {

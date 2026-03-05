@@ -27,20 +27,53 @@ export interface DatabaseAdapter {
   clearDatabase(): Promise<void>;
 }
 
-// In-memory adapter for Web
+const STORAGE_KEY = '@KeepReminder:web_db';
+
+// In-memory adapter for Web with LocalStorage persistence
 class InMemoryAdapter implements DatabaseAdapter {
   private db: InMemoryDB;
 
   constructor() {
     this.db = getInMemoryDB();
+    this.loadFromStorage();
+  }
+
+  private loadFromStorage() {
+    if (Platform.OS !== 'web') return;
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        this.db.memos = new Map(Object.entries(parsed.memos || {}));
+        this.db.triggers = new Map(Object.entries(parsed.triggers || {}));
+        this.db.locationPresets = new Map(Object.entries(parsed.locationPresets || {}));
+        console.log('Web DB loaded from localStorage');
+      }
+    } catch (e) {
+      console.error('Failed to load Web DB from localStorage', e);
+    }
+  }
+
+  private saveToStorage() {
+    if (Platform.OS !== 'web') return;
+    try {
+      const data = {
+        memos: Object.fromEntries(this.db.memos),
+        triggers: Object.fromEntries(this.db.triggers),
+        locationPresets: Object.fromEntries(this.db.locationPresets),
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {
+      console.error('Failed to save Web DB to localStorage', e);
+    }
   }
 
   async runAsync(sql: string, params?: any[]): Promise<any> {
     const sqlLower = sql.trim().toLowerCase();
 
     if (sqlLower.startsWith('insert into memos')) {
-      const [id, title, content, blocks, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt] = params || [];
-      this.db.memos.set(id, { id, title, content, blocks, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt: deletedAt || null });
+      const [id, title, content, blocks, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt, tag] = params || [];
+      this.db.memos.set(id, { id, title, content, blocks, color, isPinned, todoType, todoDate, isCompleted, completedAt, createdAt, updatedAt, deletedAt: deletedAt || null, tag });
     } else if (sqlLower.startsWith('insert into triggers')) {
       const [id, memoId, type, isActive, scheduledAt, durationSeconds, startedAt,
         latitude, longitude, radius, locationName, actionType, createdAt, updatedAt] = params || [];
@@ -109,6 +142,8 @@ class InMemoryAdapter implements DatabaseAdapter {
       const id = params?.[0];
       this.db.locationPresets.delete(id);
     }
+
+    this.saveToStorage();
     return { changes: 1 };
   }
 
@@ -179,6 +214,7 @@ class InMemoryAdapter implements DatabaseAdapter {
     this.db.memos.clear();
     this.db.triggers.clear();
     this.db.locationPresets.clear();
+    this.saveToStorage();
   }
 }
 
