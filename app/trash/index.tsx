@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Platform, useColorScheme } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useMemos } from '../src/contexts/MemoContext';
-import { useThemeColors, Spacing, FontSize, BorderRadius, getCardShadow } from '../src/theme';
-import { MEMO_COLORS } from '../src/types/models';
+import { useMemos } from '../../src/contexts/MemoContext';
+import { useThemeColors, Spacing, FontSize, BorderRadius, getCardShadow } from '../../src/theme';
+import { MEMO_COLORS } from '../../src/types/models';
 
 export default function TrashScreen() {
     const { deletedMemos, restoreMemo, permanentlyDeleteMemo, emptyTrash, loading } = useMemos();
