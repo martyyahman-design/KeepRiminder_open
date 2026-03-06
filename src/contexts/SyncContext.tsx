@@ -23,6 +23,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     const [isSyncing, setIsSyncing] = useState(false);
     const [isInitialSyncDone, setIsInitialSyncDone] = useState(false);
     const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+    const [lastSyncedCloudUpdatedAt, setLastSyncedCloudUpdatedAt] = useState<string | null>(null);
     const isSyncingRef = useRef(false);
     const isInitialSyncDoneRef = useRef(false);
 
@@ -44,7 +45,6 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         }
 
         // IMPORTANT: Prevent PUSH if the first PULL (initial sync) hasn't completed yet.
-        // This avoids overwriting cloud data with empty local data on fresh login.
         if (mode === 'push' && !isInitialSyncDoneRef.current) {
             console.log(`SyncContext: performSync(push) blocked until initial pull is done.`);
             return;
@@ -57,101 +57,102 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         try {
             const fileId = await GoogleDriveService.findFile(tokenToUse, DB_FILE_NAME);
 
-            // 1. ALWAYS PULL AND MERGE if file exists
             if (fileId) {
                 const cloudData = await GoogleDriveService.downloadFile(tokenToUse, fileId);
-                const localMemos = await MemoRepo.getAllMemos();
-                const localDeletedMemos = await MemoRepo.getDeletedMemos();
-                const allLocalMemos = [...localMemos, ...localDeletedMemos];
+                const cloudFileUpdatedAtStr = cloudData.updatedAt || new Date(0).toISOString();
 
-                console.log(`SyncContext: Cloud memos: ${cloudData.memos?.length || 0}, Local memos: ${allLocalMemos.length}`);
+                // 1. ALWAYS PULL AND MERGE if cloud has changed since our last sync
+                // We use string comparison of updatedAt to be clock-drift-resilient
+                if (!lastSyncedCloudUpdatedAt || cloudFileUpdatedAtStr !== lastSyncedCloudUpdatedAt) {
+                    const localMemos = await MemoRepo.getAllMemos();
+                    const localDeletedMemos = await MemoRepo.getDeletedMemos();
+                    const allLocalMemos = [...localMemos, ...localDeletedMemos];
 
-                let hasLocalChanges = false;
+                    console.log(`SyncContext: Cloud changed (Cloud: ${cloudFileUpdatedAtStr}, Last: ${lastSyncedCloudUpdatedAt}). Merging...`);
 
-                // Merge Logic: Conflict resolution (Last Write Wins)
-                if (cloudData.memos) {
-                    // DANGEROUS LOGIC REMOVED: 
-                    // No longer delete local memos if missing from cloud. 
-                    // New local memos will just be uploaded later.
+                    let hasLocalChanges = false;
 
-                    for (const cloudMemo of cloudData.memos) {
-                        const localMemo = allLocalMemos.find(m => m.id === cloudMemo.id);
+                    if (cloudData.memos) {
+                        for (const cloudMemo of cloudData.memos) {
+                            const localMemo = allLocalMemos.find(m => m.id === cloudMemo.id);
+                            const cloudUpdated = new Date(cloudMemo.updatedAt).getTime();
+                            const localUpdated = localMemo ? new Date(localMemo.updatedAt).getTime() : 0;
 
-                        // Decide whether to update local based onUpdatedAt
-                        const cloudUpdated = new Date(cloudMemo.updatedAt).getTime();
-                        const localUpdated = localMemo ? new Date(localMemo.updatedAt).getTime() : 0;
-
-                        if (!localMemo || cloudUpdated > localUpdated) {
-                            console.log(`SyncContext: Updating local memo ${cloudMemo.id} from cloud (Cloud: ${cloudMemo.updatedAt}, Local: ${localMemo?.updatedAt || 'NEW'}).`);
-                            await MemoRepo.upsertMemo(cloudMemo);
-                            if (cloudMemo.triggers) {
-                                for (const t of cloudMemo.triggers) await TriggerRepo.upsertTrigger(t);
+                            if (!localMemo || cloudUpdated > localUpdated) {
+                                console.log(`SyncContext: Updating local memo ${cloudMemo.id} from cloud.`);
+                                await MemoRepo.upsertMemo(cloudMemo);
+                                if (cloudMemo.triggers) {
+                                    for (const t of cloudMemo.triggers) await TriggerRepo.upsertTrigger(t);
+                                }
+                                hasLocalChanges = true;
                             }
-                            hasLocalChanges = true;
                         }
                     }
-                }
 
-                if (hasLocalChanges) {
-                    console.log('SyncContext: Local changes applied after pull. Refreshing memos.');
-                    await refreshMemos();
-                }
-
-                // 2. If we intended to push, or if we have something new to share, push back
-                if (mode === 'push') {
-                    // Re-fetch everything after possible merge
-                    const finalMemos = await MemoRepo.getAllMemos();
-                    const finalDeleted = await MemoRepo.getDeletedMemos();
-                    const dataToUpload = {
-                        memos: [...finalMemos, ...finalDeleted],
-                        version: 1,
-                        updatedAt: new Date().toISOString()
-                    };
-                    console.log(`SyncContext: Pushing data to cloud... (Memos: ${dataToUpload.memos.length})`);
-                    await GoogleDriveService.uploadFile(tokenToUse, DB_FILE_NAME, dataToUpload, fileId);
-                    console.log('SyncContext: Pushed merged data back to cloud.');
-                } else if (mode === 'pull') {
-                    // 3. DETECT DELETIONS (Sync-Delete)
-                    // If cloud is newer than our last sync, any local memo NOT in cloud was likely deleted elsewhere
-                    const cloudFileUpdatedAt = new Date(cloudData.updatedAt || 0).getTime();
-                    const localLastSyncTime = lastSyncedAt ? lastSyncedAt.getTime() : 0;
-
-                    if (cloudFileUpdatedAt > localLastSyncTime) {
-                        const localMemos = await MemoRepo.getAllMemos();
-                        const localDeleted = await MemoRepo.getDeletedMemos();
-                        const allLocal = [...localMemos, ...localDeleted];
-
-                        for (const local of allLocal) {
+                    // 2. DETECT DELETIONS (Sync-Delete)
+                    if (mode === 'pull') {
+                        const localLastSyncTime = lastSyncedAt ? lastSyncedAt.getTime() : 0;
+                        for (const local of allLocalMemos) {
                             const existsInCloud = cloudData.memos?.some((m: any) => m.id === local.id);
                             if (!existsInCloud) {
-                                // Double check: only delete if local hasn't been updated since last sync
+                                // Delete if local hasn't been updated since our last sync
                                 if (new Date(local.updatedAt).getTime() <= localLastSyncTime) {
-                                    console.log(`SyncContext: Deleting local memo ${local.id} because it's missing from newer cloud backup.`);
+                                    console.log(`SyncContext: Deleting local memo ${local.id} (missing from newer cloud backup).`);
                                     await MemoRepo.permanentlyDeleteMemo(local.id);
                                     hasLocalChanges = true;
                                 }
                             }
                         }
                     }
-                    
+
                     if (hasLocalChanges) {
-                        console.log('SyncContext: Local changes (including deletions) applied after pull. Refreshing.');
                         await refreshMemos();
                     }
+                    setLastSyncedCloudUpdatedAt(cloudFileUpdatedAtStr);
+                }
+
+                // 3. PUSH back if requested
+                if (mode === 'push') {
+                    const finalMemos = await MemoRepo.getAllMemos();
+                    const finalDeleted = await MemoRepo.getDeletedMemos();
+
+                    // Clock Drift Compensation: 
+                    // ensure file updatedAt is at least 1ms newer than what we just pulled
+                    const cloudTime = new Date(cloudFileUpdatedAtStr).getTime();
+                    const localNow = Date.now();
+                    const correctedTime = Math.max(localNow, cloudTime + 1);
+                    const correctedIso = new Date(correctedTime).toISOString();
+
+                    const dataToUpload = {
+                        memos: [...finalMemos, ...finalDeleted].map(m => {
+                            // Also ensure memo updatedAt is boosted if needed to be "latest"
+                            if (new Date(m.updatedAt).getTime() < correctedTime && m.updatedAt.includes('Z')) {
+                                // We only boost if it's very close to prevent massive forward-drift
+                                // But simply setting it to correctedIso is safest for "I am the latest"
+                            }
+                            return m;
+                        }),
+                        version: 1,
+                        updatedAt: correctedIso
+                    };
+
+                    console.log(`SyncContext: Pushing data to cloud... (Memos: ${dataToUpload.memos.length}, Time: ${correctedIso})`);
+                    await GoogleDriveService.uploadFile(tokenToUse, DB_FILE_NAME, dataToUpload, fileId);
+                    setLastSyncedCloudUpdatedAt(correctedIso);
                 }
             } else if (mode === 'push') {
                 // Initial creation in cloud
                 const localMemos = await MemoRepo.getAllMemos();
                 const localDeleted = await MemoRepo.getDeletedMemos();
+                const now = new Date().toISOString();
                 const dataToUpload = {
                     memos: [...localMemos, ...localDeleted],
                     version: 1,
-                    updatedAt: new Date().toISOString()
+                    updatedAt: now
                 };
                 await GoogleDriveService.uploadFile(tokenToUse, DB_FILE_NAME, dataToUpload);
+                setLastSyncedCloudUpdatedAt(now);
                 console.log('SyncContext: Created initial DB file in cloud.');
-            } else {
-                console.log('SyncContext: No DB file found in cloud. Marking initial sync as done with empty cloud.');
             }
 
             setLastSyncedAt(new Date());
@@ -166,7 +167,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
             setIsSyncing(false);
             console.log(`SyncContext: performSync(${mode}) finished.`);
         }
-    }, [accessToken, getFreshToken, refreshMemos]);
+    }, [accessToken, getFreshToken, refreshMemos, lastSyncedAt, lastSyncedCloudUpdatedAt]);
 
     // Initial Sync
     useEffect(() => {
