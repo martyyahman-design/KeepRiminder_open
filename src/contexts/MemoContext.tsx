@@ -5,7 +5,7 @@ import * as MemoRepo from '../database/repositories/memoRepository';
 import * as TriggerRepo from '../database/repositories/triggerRepository';
 import { getDatabase } from '../database/db';
 import { useAuth } from './AuthContext';
-import { useSync } from './SyncContext';
+import { TombstoneService } from '../services/TombstoneService';
 
 interface MemoContextType {
     memos: MemoWithTriggers[];
@@ -31,7 +31,6 @@ export function MemoProvider({ children }: { children: ReactNode }) {
     const [deletedMemos, setDeletedMemos] = useState<MemoWithTriggers[]>([]);
     const [loading, setLoading] = useState(true);
     const { user } = useAuth();
-    const { markAsDeleted } = useSync();
     const isRefreshingRef = useRef(false);
 
     const loadMemosWithTriggers = useCallback(async (isDeleted: boolean = false): Promise<MemoWithTriggers[]> => {
@@ -145,7 +144,7 @@ export function MemoProvider({ children }: { children: ReactNode }) {
     const permanentlyDeleteMemoHandler = useCallback(async (id: string) => {
         if (Platform.OS === 'web') console.log('MemoContext: permanentlyDeleteMemo starting', id);
         try {
-            await markAsDeleted(id);
+            await TombstoneService.addTombstone(id);
             await MemoRepo.permanentlyDeleteMemo(id);
             setDeletedMemos(prev => prev.filter(m => m.id !== id));
             if (Platform.OS === 'web') alert('完全に削除しました');
@@ -153,14 +152,14 @@ export function MemoProvider({ children }: { children: ReactNode }) {
             console.error('Error permanently deleting memo:', err);
             if (Platform.OS === 'web') alert('完全削除中にエラー: ' + err);
         }
-    }, [markAsDeleted]);
+    }, []);
 
     const emptyTrashHandler = useCallback(async () => {
         if (Platform.OS === 'web') console.log('MemoContext: emptyTrash starting');
         try {
             // Mark all items as deleted in tombstones before clearing
             for (const m of deletedMemos) {
-                await markAsDeleted(m.id);
+                await TombstoneService.addTombstone(m.id);
             }
             await MemoRepo.emptyTrash();
             setDeletedMemos([]);
@@ -169,7 +168,7 @@ export function MemoProvider({ children }: { children: ReactNode }) {
             console.error('Error emptying trash:', err);
             if (Platform.OS === 'web') alert('ごみ箱を空にする際にエラー: ' + err);
         }
-    }, [deletedMemos, markAsDeleted]);
+    }, [deletedMemos]);
 
     const searchMemosHandler = useCallback(async (query: string): Promise<MemoWithTriggers[]> => {
         if (!query.trim()) {

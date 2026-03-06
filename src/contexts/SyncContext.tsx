@@ -4,19 +4,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
 import { useMemos } from './MemoContext';
 import { GoogleDriveService } from '../services/GoogleDriveService';
+import { TombstoneService } from '../services/TombstoneService';
 import * as MemoRepo from '../database/repositories/memoRepository';
 import * as TriggerRepo from '../database/repositories/triggerRepository';
 
 const LAST_SYNCED_AT_KEY = '@KeepReminder:last_synced_at';
 const LAST_CLOUD_UPDATED_AT_KEY = '@KeepReminder:last_cloud_updated_at';
-const LAST_TOMBSTONES_KEY = '@KeepReminder:last_tombstones';
 
 interface SyncContextType {
     isSyncing: boolean;
     lastSyncedAt: Date | null;
     isInitialSyncDone: boolean;
     performSync: (mode?: 'pull' | 'push') => Promise<void>;
-    markAsDeleted: (id: string) => Promise<void>;
 }
 
 const SyncContext = createContext<SyncContextType | undefined>(undefined);
@@ -30,23 +29,21 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     const [isInitialSyncDone, setIsInitialSyncDone] = useState(false);
     const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
     const [lastSyncedCloudUpdatedAt, setLastSyncedCloudUpdatedAt] = useState<string | null>(null);
-    const [tombstones, setTombstones] = useState<Record<string, string>>({});
     const [isStateLoaded, setIsStateLoaded] = useState(false);
 
     const lastSyncedAtRef = useRef<Date | null>(null);
     const lastSyncedCloudUpdatedAtRef = useRef<string | null>(null);
-    const tombstonesRef = useRef<Record<string, string>>({});
     const isSyncingRef = useRef(false);
     const isInitialSyncDoneRef = useRef(false);
 
     // Persistence: Load sync state on mount
+    // Persistence: Load sync state on mount
     useEffect(() => {
         const loadSyncState = async () => {
             try {
-                const [storedAt, storedCloud, storedTombstones] = await Promise.all([
+                const [storedAt, storedCloud] = await Promise.all([
                     AsyncStorage.getItem(LAST_SYNCED_AT_KEY),
                     AsyncStorage.getItem(LAST_CLOUD_UPDATED_AT_KEY),
-                    AsyncStorage.getItem(LAST_TOMBSTONES_KEY),
                 ]);
 
                 if (storedAt) {
@@ -58,13 +55,8 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                     setLastSyncedCloudUpdatedAt(storedCloud);
                     lastSyncedCloudUpdatedAtRef.current = storedCloud;
                 }
-                if (storedTombstones) {
-                    const parsed = JSON.parse(storedTombstones);
-                    setTombstones(parsed);
-                    tombstonesRef.current = parsed;
-                }
 
-                console.log('SyncContext: Persistent sync state loaded', { storedAt, storedCloud, tombstoneCount: Object.keys(tombstonesRef.current).length });
+                console.log('SyncContext: Persistent sync state loaded', { storedAt, storedCloud });
             } catch (e) {
                 console.error('SyncContext: Failed to load sync state', e);
             } finally {
@@ -72,15 +64,6 @@ export function SyncProvider({ children }: { children: ReactNode }) {
             }
         };
         loadSyncState();
-    }, []);
-
-    const markAsDeleted = useCallback(async (id: string) => {
-        const now = new Date().toISOString();
-        const newTombstones = { ...tombstonesRef.current, [id]: now };
-        setTombstones(newTombstones);
-        tombstonesRef.current = newTombstones;
-        await AsyncStorage.setItem(LAST_TOMBSTONES_KEY, JSON.stringify(newTombstones));
-        console.log(`SyncContext: Marked ${id} as deleted in tombstones.`);
     }, []);
 
     const performSync = useCallback(async (mode: 'pull' | 'push' = 'pull') => {
@@ -138,23 +121,8 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
                     // MERGE TOMBSTONES
                     const cloudTombstones: Record<string, string> = cloudData.tombstones || {};
-                    const mergedTombstones = { ...tombstonesRef.current };
-                    let hasTombstoneChanges = false;
-
-                    for (const [id, deletedAt] of Object.entries(cloudTombstones)) {
-                        const localDeletedAt = mergedTombstones[id];
-                        if (!localDeletedAt || new Date(deletedAt).getTime() > new Date(localDeletedAt).getTime()) {
-                            mergedTombstones[id] = deletedAt;
-                            hasTombstoneChanges = true;
-                        }
-                    }
-
-                    if (hasTombstoneChanges) {
-                        setTombstones(mergedTombstones);
-                        tombstonesRef.current = mergedTombstones;
-                        await AsyncStorage.setItem(LAST_TOMBSTONES_KEY, JSON.stringify(mergedTombstones));
-                        console.log('SyncContext: Merged tombstones from cloud', Object.keys(mergedTombstones).length);
-                    }
+                    await TombstoneService.mergeTombstones(cloudTombstones);
+                    const currentTombstones = await TombstoneService.getTombstones();
 
                     console.log(`SyncContext: Cloud changed (Cloud: ${cloudFileUpdatedAtStr}, Last: ${lastSyncedCloudUpdatedAtRef.current}). Merging...`);
 
@@ -165,7 +133,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                         const localMemo = allLocalMemos.find(m => m.id === cloudMemo.id);
                         const cloudUpdated = new Date(cloudMemo.updatedAt).getTime();
                         const localUpdated = localMemo ? new Date(localMemo.updatedAt).getTime() : 0;
-                        const tombstoneAt = mergedTombstones[cloudMemo.id];
+                        const tombstoneAt = currentTombstones[cloudMemo.id];
 
                         // TOMBSTONE GUARD: Skip if this memo is marked as deleted newer than cloud version
                         if (tombstoneAt && new Date(tombstoneAt).getTime() >= cloudUpdated) {
@@ -196,7 +164,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                     }
 
                     // B. Process Tombstones against Local
-                    for (const [id, deletedAt] of Object.entries(mergedTombstones)) {
+                    for (const [id, deletedAt] of Object.entries(currentTombstones)) {
                         const local = allLocalMemos.find(m => m.id === id);
                         if (local && new Date(deletedAt).getTime() > new Date(local.updatedAt).getTime()) {
                             console.log(`SyncContext: Deleting local ${id} - match found in tombstones (${deletedAt})`);
@@ -209,7 +177,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                     if (mode === 'pull') {
                         for (const local of allLocalMemos) {
                             const existsInCloud = cloudData.memos.some((m: any) => m.id === local.id);
-                            const inTombstones = !!mergedTombstones[local.id];
+                            const inTombstones = !!currentTombstones[local.id];
                             if (!existsInCloud && !inTombstones) {
                                 // If it's old and missing from both cloud memos and cloud tombstones, 
                                 // it means the tombstone expired or it was never there.
@@ -232,23 +200,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
                 // 3. PUSH back if requested
                 if (mode === 'push') {
-                    // Cleanup old tombstones (older than 30 days)
-                    const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
-                    const freshTombstones: Record<string, string> = {};
-                    let tombstonesCleaned = false;
-                    for (const [id, date] of Object.entries(tombstonesRef.current)) {
-                        if (new Date(date).getTime() > thirtyDaysAgo) {
-                            freshTombstones[id] = date;
-                        } else {
-                            tombstonesCleaned = true;
-                        }
-                    }
-                    if (tombstonesCleaned) {
-                        setTombstones(freshTombstones);
-                        tombstonesRef.current = freshTombstones;
-                        await AsyncStorage.setItem(LAST_TOMBSTONES_KEY, JSON.stringify(freshTombstones));
-                        console.log('SyncContext: Cleaned up old tombstones');
-                    }
+                    // Cleanup old tombstones
+                    await TombstoneService.cleanupTombstones();
+                    const currentTombstones = await TombstoneService.getTombstones();
 
                     const finalMemos = await MemoRepo.getAllMemos();
                     const finalDeleted = await MemoRepo.getDeletedMemos();
@@ -262,7 +216,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                     const dataToUpload = {
                         version: 2,
                         memos: [...finalMemos, ...finalDeleted],
-                        tombstones: tombstonesRef.current,
+                        tombstones: currentTombstones,
                         updatedAt: correctedIso
                     };
 
@@ -277,10 +231,11 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                 const localMemos = await MemoRepo.getAllMemos();
                 const localDeleted = await MemoRepo.getDeletedMemos();
                 const now = new Date().toISOString();
+                const currentTombstones = await TombstoneService.getTombstones();
                 const dataToUpload = {
                     version: 2,
                     memos: [...localMemos, ...localDeleted],
-                    tombstones: tombstonesRef.current,
+                    tombstones: currentTombstones,
                     updatedAt: now
                 };
                 await GoogleDriveService.uploadFile(tokenToUse, DB_FILE_NAME, dataToUpload);
@@ -333,7 +288,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         }, 2000); // 2 seconds debounce
 
         return () => clearTimeout(timer);
-    }, [memos, deletedMemos, tombstones, accessToken, performSync, isStateLoaded]);
+    }, [memos, deletedMemos, accessToken, performSync, isStateLoaded]);
 
     // Background Polling
     useEffect(() => {
@@ -352,8 +307,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
             isSyncing,
             lastSyncedAt,
             isInitialSyncDone,
-            performSync,
-            markAsDeleted
+            performSync
         }}>
             {children}
         </SyncContext.Provider>
