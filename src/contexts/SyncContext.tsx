@@ -117,14 +117,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                     const localMemos = await MemoRepo.getAllMemos();
                     const localDeletedMemos = await MemoRepo.getDeletedMemos();
                     const allLocalMemos = [...localMemos, ...localDeletedMemos];
-                    const lastSyncTime = lastSyncedAtRef.current ? lastSyncedAtRef.current.getTime() : 0;
 
                     // MERGE TOMBSTONES
                     const cloudTombstones: Record<string, string> = cloudData.tombstones || {};
                     await TombstoneService.mergeTombstones(cloudTombstones);
                     const currentTombstones = await TombstoneService.getTombstones();
 
-                    console.log(`SyncContext: Cloud changed (Cloud: ${cloudFileUpdatedAtStr}, Last: ${lastSyncedCloudUpdatedAtRef.current}). Merging...`);
+                    console.log(`SyncContext: Cloud changed (Cloud: ${cloudFileUpdatedAtStr}, Last Local Sync: ${lastSyncedCloudUpdatedAtRef.current}). Merging...`);
 
                     let hasLocalChanges = false;
 
@@ -135,31 +134,31 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                         const localUpdated = localMemo ? new Date(localMemo.updatedAt).getTime() : 0;
                         const tombstoneAt = currentTombstones[cloudMemo.id];
 
-                        // TOMBSTONE GUARD: Skip if this memo is marked as deleted newer than cloud version
+                        // 1. TOMBSTONE GUARD: Skip if this memo is marked as deleted AND tombstone is newer or equal to cloud version
                         if (tombstoneAt && new Date(tombstoneAt).getTime() >= cloudUpdated) {
-                            console.log(`SyncContext: Skipping cloud memo ${cloudMemo.id} - tombstone exists (${tombstoneAt})`);
+                            console.log(`SyncContext: [SKIP] Cloud memo ${cloudMemo.id} - tombstone exists and is newer (${tombstoneAt} >= ${cloudMemo.updatedAt})`);
                             continue;
                         }
 
+                        // 2. NEW OR UPDATED?
                         if (!localMemo) {
-                            // Only download if it's truly new or newer than our last sync (resurrection prevention)
-                            if (cloudUpdated > lastSyncTime) {
-                                console.log(`SyncContext: New memo ${cloudMemo.id} from cloud.`);
-                                await MemoRepo.upsertMemo(cloudMemo);
-                                if (cloudMemo.triggers) {
-                                    for (const t of cloudMemo.triggers) await TriggerRepo.upsertTrigger(t);
-                                }
-                                hasLocalChanges = true;
-                            } else {
-                                console.log(`SyncContext: Skipping cloud memo ${cloudMemo.id} (cloud updatedAt ${cloudMemo.updatedAt} is older than last sync). Likely deleted locally.`);
-                            }
-                        } else if (cloudUpdated > localUpdated) {
-                            console.log(`SyncContext: Updating existing local memo ${cloudMemo.id} from cloud.`);
+                            // It's not in local AND not in tombstone (checked above) -> It's a truly new memo from another device
+                            console.log(`SyncContext: [CREATE] New memo ${cloudMemo.id} from cloud (Title: ${cloudMemo.title || 'Untitled'}).`);
                             await MemoRepo.upsertMemo(cloudMemo);
                             if (cloudMemo.triggers) {
                                 for (const t of cloudMemo.triggers) await TriggerRepo.upsertTrigger(t);
                             }
                             hasLocalChanges = true;
+                        } else if (cloudUpdated > localUpdated) {
+                            // It exists locally, but cloud is newer
+                            console.log(`SyncContext: [UPDATE] Existing local memo ${cloudMemo.id} from cloud (Cloud: ${cloudMemo.updatedAt}, Local: ${localMemo.updatedAt}).`);
+                            await MemoRepo.upsertMemo(cloudMemo);
+                            if (cloudMemo.triggers) {
+                                for (const t of cloudMemo.triggers) await TriggerRepo.upsertTrigger(t);
+                            }
+                            hasLocalChanges = true;
+                        } else {
+                            console.log(`SyncContext: [NO-OP] Cloud memo ${cloudMemo.id} is not newer (Cloud: ${cloudMemo.updatedAt}, Local: ${localMemo.updatedAt}).`);
                         }
                     }
 
@@ -167,28 +166,16 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                     for (const [id, deletedAt] of Object.entries(currentTombstones)) {
                         const local = allLocalMemos.find(m => m.id === id);
                         if (local && new Date(deletedAt).getTime() > new Date(local.updatedAt).getTime()) {
-                            console.log(`SyncContext: Deleting local ${id} - match found in tombstones (${deletedAt})`);
+                            console.log(`SyncContext: [DELETE] Local ${id} - found in tombstones (${deletedAt} > ${local.updatedAt})`);
                             await MemoRepo.permanentlyDeleteMemo(id);
                             hasLocalChanges = true;
                         }
                     }
 
-                    // C. Legacy Sync-Delete (Clean up items missing from cloud AND tombstone list)
-                    if (mode === 'pull') {
-                        for (const local of allLocalMemos) {
-                            const existsInCloud = cloudData.memos.some((m: any) => m.id === local.id);
-                            const inTombstones = !!currentTombstones[local.id];
-                            if (!existsInCloud && !inTombstones) {
-                                // If it's old and missing from both cloud memos and cloud tombstones, 
-                                // it means the tombstone expired or it was never there.
-                                if (new Date(local.updatedAt).getTime() <= lastSyncTime) {
-                                    console.log(`SyncContext: Legacy cleaning local memo ${local.id}.`);
-                                    await MemoRepo.permanentlyDeleteMemo(local.id);
-                                    hasLocalChanges = true;
-                                }
-                            }
-                        }
-                    }
+                    // C. Cleanup logic (Optional: detect items removed from cloud WITHOUT tombstones - e.g. manual file edit)
+                    // If mode is 'pull', we could theoretically clean up things not in cloud AND not in tombstones,
+                    // but we must be careful. For now, let's rely strictly on tombstones for explicit deletions.
+                    // Legacy cleaning is removed to prevent accidental data loss.
 
                     if (hasLocalChanges) {
                         await refreshMemos();

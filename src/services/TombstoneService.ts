@@ -22,22 +22,26 @@ export class TombstoneService {
     }
 
     static async addTombstone(id: string): Promise<void> {
-        const tombstones = await this.getTombstones();
+        const tombstones = { ...(await this.getTombstones()) };
         const now = new Date().toISOString();
-        tombstones[id] = now;
-        this.cache = tombstones;
-        await AsyncStorage.setItem(LAST_TOMBSTONES_KEY, JSON.stringify(tombstones));
-        console.log(`TombstoneService: Added tombstone for ${id}`);
+
+        // Safety: only update if new or later than existing (though usually it's just added)
+        if (!tombstones[id] || new Date(now).getTime() > new Date(tombstones[id]).getTime()) {
+            tombstones[id] = now;
+            this.cache = tombstones;
+            await AsyncStorage.setItem(LAST_TOMBSTONES_KEY, JSON.stringify(tombstones));
+            console.log(`TombstoneService: Recorded tombstone for ${id} at ${now}`);
+        }
     }
 
     static async mergeTombstones(incoming: Record<string, string>): Promise<boolean> {
-        const local = await this.getTombstones();
+        const local = { ...(await this.getTombstones()) };
         let changed = false;
 
-        for (const [id, deletedAt] of Object.entries(incoming)) {
+        for (const [id, incomingDeletedAt] of Object.entries(incoming)) {
             const localDeletedAt = local[id];
-            if (!localDeletedAt || new Date(deletedAt).getTime() > new Date(localDeletedAt).getTime()) {
-                local[id] = deletedAt;
+            if (!localDeletedAt || new Date(incomingDeletedAt).getTime() > new Date(localDeletedAt).getTime()) {
+                local[id] = incomingDeletedAt;
                 changed = true;
             }
         }
