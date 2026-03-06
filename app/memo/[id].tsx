@@ -341,7 +341,7 @@ export default function MemoEditScreen() {
         switch (trigger.type) {
             case 'datetime':
                 return trigger.scheduledAt
-                    ? new Date(trigger.scheduledAt).toLocaleString('ja-JP')
+                    ? new Date(trigger.scheduledAt).toLocaleString('ja-JP', { hour12: false })
                     : '日時未設定';
             case 'timer':
                 if (trigger.durationSeconds) {

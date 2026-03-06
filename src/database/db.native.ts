@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import * as SQLite from 'expo-sqlite';
 
 // Web fallback: in-memory storage
 interface InMemoryDB {
@@ -24,12 +25,15 @@ function getInMemoryDB(): InMemoryDB {
 let db: any = null;
 
 async function initSQLite(): Promise<any> {
-  const SQLite = require('expo-sqlite');
+  console.log('db.native.ts: Opening SQLite database...');
   const database = await SQLite.openDatabaseAsync('keepreminder.db');
-  await database.execAsync(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA foreign_keys = ON;
 
+  // Disable WAL and foreign keys temporarily for debugging
+  // await database.execAsync('PRAGMA journal_mode = WAL;');
+  // await database.execAsync('PRAGMA foreign_keys = ON;');
+  await database.execAsync('PRAGMA foreign_keys = OFF;');
+
+  await database.execAsync(`
     CREATE TABLE IF NOT EXISTS memos (
       id TEXT PRIMARY KEY NOT NULL,
       title TEXT NOT NULL DEFAULT '',
@@ -78,10 +82,6 @@ async function initSQLite(): Promise<any> {
     CREATE INDEX IF NOT EXISTS idx_triggers_memoId ON triggers(memoId);
     CREATE INDEX IF NOT EXISTS idx_triggers_type ON triggers(type);
     CREATE INDEX IF NOT EXISTS idx_triggers_isActive ON triggers(isActive);
- 
-    -- Migration: Check if blocks column exists in memos table
-    PRAGMA table_info(memos);
-    -- Note: PRAGMA within execAsync can be tricky, but we'll use it to ensure it runs or handle via js logic
   `);
 
   // Proper migration for native SQLite
@@ -285,22 +285,55 @@ class InMemoryAdapter implements DatabaseAdapter {
 
 // SQLite adapter for native
 class SQLiteAdapter implements DatabaseAdapter {
-  private database: any;
+  private database: SQLite.SQLiteDatabase;
 
-  constructor(database: any) {
+  constructor(database: SQLite.SQLiteDatabase) {
     this.database = database;
   }
 
   async runAsync(sql: string, params?: any[]): Promise<any> {
-    return this.database.runAsync(sql, params || []);
+    console.log(`SQLiteAdapter.runAsync: ${sql}`, params);
+    const statement = await this.database.prepareAsync(sql);
+    try {
+      const result = await statement.executeAsync(params || []);
+      console.log(`SQLiteAdapter.runAsync success: ${sql}`);
+      return result;
+    } catch (err) {
+      console.error(`SQLiteAdapter.runAsync error [${sql}]:`, err);
+      throw err;
+    } finally {
+      await statement.finalizeAsync();
+    }
   }
 
   async getFirstAsync<T = any>(sql: string, params?: any[]): Promise<T | null> {
-    return this.database.getFirstAsync(sql, params || []);
+    console.log(`SQLiteAdapter.getFirstAsync: ${sql}`, params);
+    const statement = await this.database.prepareAsync(sql);
+    try {
+      const result = await statement.executeAsync<T>(params || []);
+      const first = await result.getFirstAsync();
+      return first;
+    } catch (err) {
+      console.error(`SQLiteAdapter.getFirstAsync error [${sql}]:`, err);
+      throw err;
+    } finally {
+      await statement.finalizeAsync();
+    }
   }
 
   async getAllAsync<T = any>(sql: string, params?: any[]): Promise<T[]> {
-    return this.database.getAllAsync(sql, params || []);
+    console.log(`SQLiteAdapter.getAllAsync: ${sql}`, params);
+    const statement = await this.database.prepareAsync(sql);
+    try {
+      const result = await statement.executeAsync<T>(params || []);
+      const all = await result.getAllAsync();
+      return all;
+    } catch (err) {
+      console.error(`SQLiteAdapter.getAllAsync error [${sql}]:`, err);
+      throw err;
+    } finally {
+      await statement.finalizeAsync();
+    }
   }
 
   async clearDatabase(): Promise<void> {
@@ -316,8 +349,12 @@ let adapter: DatabaseAdapter | null = null;
 let initPromise: Promise<DatabaseAdapter> | null = null;
 
 export async function getDatabase(): Promise<DatabaseAdapter> {
+  console.log('db.native.ts: getDatabase called');
   if (adapter) return adapter;
-  if (initPromise) return initPromise;
+  if (initPromise) {
+    console.log('db.native.ts: Returning existing initPromise');
+    return initPromise;
+  }
 
   initPromise = (async () => {
     try {

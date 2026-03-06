@@ -77,7 +77,14 @@ export const GoogleDriveService = {
             body,
         });
 
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`GoogleDriveService: Upload failed with status ${response.status}: ${errorText}`);
+            throw new Error(`Upload failed: ${response.status}`);
+        }
+
         const result = await response.json();
+        console.log(`GoogleDriveService: File ${fileId ? 'updated' : 'created'} successfully. ID: ${result.id}`);
         return result.id;
     },
 };

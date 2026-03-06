@@ -24,6 +24,8 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     const [isInitialSyncDone, setIsInitialSyncDone] = useState(false);
     const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
     const [lastSyncedCloudUpdatedAt, setLastSyncedCloudUpdatedAt] = useState<string | null>(null);
+    const lastSyncedAtRef = useRef<Date | null>(null);
+    const lastSyncedCloudUpdatedAtRef = useRef<string | null>(null);
     const isSyncingRef = useRef(false);
     const isInitialSyncDoneRef = useRef(false);
 
@@ -63,12 +65,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
                 // 1. ALWAYS PULL AND MERGE if cloud has changed since our last sync
                 // We use string comparison of updatedAt to be clock-drift-resilient
-                if (!lastSyncedCloudUpdatedAt || cloudFileUpdatedAtStr !== lastSyncedCloudUpdatedAt) {
+                if (!lastSyncedCloudUpdatedAtRef.current || cloudFileUpdatedAtStr !== lastSyncedCloudUpdatedAtRef.current) {
                     const localMemos = await MemoRepo.getAllMemos();
                     const localDeletedMemos = await MemoRepo.getDeletedMemos();
                     const allLocalMemos = [...localMemos, ...localDeletedMemos];
 
-                    console.log(`SyncContext: Cloud changed (Cloud: ${cloudFileUpdatedAtStr}, Last: ${lastSyncedCloudUpdatedAt}). Merging...`);
+                    console.log(`SyncContext: Cloud changed (Cloud: ${cloudFileUpdatedAtStr}, Last: ${lastSyncedCloudUpdatedAtRef.current}). Merging...`);
 
                     let hasLocalChanges = false;
 
@@ -91,7 +93,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
                     // 2. DETECT DELETIONS (Sync-Delete)
                     if (mode === 'pull') {
-                        const localLastSyncTime = lastSyncedAt ? lastSyncedAt.getTime() : 0;
+                        const localLastSyncTime = lastSyncedAtRef.current ? lastSyncedAtRef.current.getTime() : 0;
                         for (const local of allLocalMemos) {
                             const existsInCloud = cloudData.memos?.some((m: any) => m.id === local.id);
                             if (!existsInCloud) {
@@ -109,6 +111,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                         await refreshMemos();
                     }
                     setLastSyncedCloudUpdatedAt(cloudFileUpdatedAtStr);
+                    lastSyncedCloudUpdatedAtRef.current = cloudFileUpdatedAtStr;
                 }
 
                 // 3. PUSH back if requested
@@ -139,6 +142,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                     console.log(`SyncContext: Pushing data to cloud... (Memos: ${dataToUpload.memos.length}, Time: ${correctedIso})`);
                     await GoogleDriveService.uploadFile(tokenToUse, DB_FILE_NAME, dataToUpload, fileId);
                     setLastSyncedCloudUpdatedAt(correctedIso);
+                    lastSyncedCloudUpdatedAtRef.current = correctedIso;
                 }
             } else if (mode === 'push') {
                 // Initial creation in cloud
@@ -152,10 +156,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                 };
                 await GoogleDriveService.uploadFile(tokenToUse, DB_FILE_NAME, dataToUpload);
                 setLastSyncedCloudUpdatedAt(now);
+                lastSyncedCloudUpdatedAtRef.current = now;
                 console.log('SyncContext: Created initial DB file in cloud.');
             }
 
-            setLastSyncedAt(new Date());
+            const nowSync = new Date();
+            setLastSyncedAt(nowSync);
+            lastSyncedAtRef.current = nowSync;
             if (!isInitialSyncDoneRef.current) {
                 isInitialSyncDoneRef.current = true;
                 setIsInitialSyncDone(true);
@@ -167,7 +174,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
             setIsSyncing(false);
             console.log(`SyncContext: performSync(${mode}) finished.`);
         }
-    }, [accessToken, getFreshToken, refreshMemos, lastSyncedAt, lastSyncedCloudUpdatedAt]);
+    }, [accessToken, getFreshToken, refreshMemos]);
 
     // Initial Sync
     useEffect(() => {

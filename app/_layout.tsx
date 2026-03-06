@@ -69,13 +69,18 @@ function RootLayoutContent() {
     }, []);
 
     async function initializeApp() {
+        const withTimeout = (promise: Promise<any>, timeoutMs: number, name: string) =>
+            Promise.race([
+                promise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error(`${name} timeout`)), timeoutMs))
+            ]);
+
         try {
-            await requestNotificationPermissions();
-            await requestLocationPermissions();
-            // Sync geofences and schedule triggers on app start
-            await syncGeofences();
-            await scheduleAllDatetimeTriggers();
-            await scheduleAllTimerTriggers();
+            await withTimeout(requestNotificationPermissions(), 5000, 'Notification Permission').catch(console.warn);
+            await withTimeout(requestLocationPermissions(), 5000, 'Location Permission').catch(console.warn);
+            await withTimeout(syncGeofences(), 5000, 'Sync Geofences').catch(console.warn);
+            await withTimeout(scheduleAllDatetimeTriggers(), 5000, 'Schedule Datetime').catch(console.warn);
+            await withTimeout(scheduleAllTimerTriggers(), 5000, 'Schedule Timer').catch(console.warn);
 
             // 「他のアプリの上に重ねて表示」の権限チェック (Androidのみ)
             if (Platform.OS === 'android' && NativeModules.OverlayPermissionModule) {
@@ -217,7 +222,6 @@ function RootLayoutContent() {
         } catch (err) {
             console.error('Error initializing app:', err);
         } finally {
-            // Signal that background initialization is done
             setIsAppReady(true);
         }
     }
@@ -232,11 +236,11 @@ function RootLayoutContent() {
     }, [isAppReady, authLoading, hasPendingAlarm]);
 
     if (!isAppReady || authLoading) {
-        return null; // Keep splash screen visible
+        return null;
     }
 
     return (
-        <>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
             <StatusBar style={colors.statusBar} />
             <AlarmOverlay />
             <SyncIndicator />
@@ -281,7 +285,7 @@ function RootLayoutContent() {
                     }}
                 />
             </Stack>
-        </>
+        </View>
     );
 }
 

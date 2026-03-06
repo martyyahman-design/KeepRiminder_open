@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/keepreminder_icon.png",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "scheme": "keepreminder",
     "baseUrl": "/KeepRiminder_open/",
     "splash": {

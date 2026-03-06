@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { Platform } from 'react-native';
 import { getDatabase } from '../database/db';
 import {
@@ -20,6 +20,7 @@ interface AuthContextType {
     accessToken: string | null;
     signIn: () => Promise<void>;
     signOut: () => Promise<void>;
+    getFreshToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -33,10 +34,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [accessToken, setAccessToken] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
 
+    const restoreWebSession = useCallback(async () => {
+        if (Platform.OS !== 'web') return;
+        try {
+            const storedUser = localStorage.getItem(USER_KEY);
+            const storedToken = localStorage.getItem(ACCESS_TOKEN_KEY);
+            if (storedUser && storedToken) {
+                setUser(JSON.parse(storedUser));
+                setAccessToken(storedToken);
+                console.log('AuthContext: Web session restored');
+            }
+        } catch (e) {
+            console.error('AuthContext: Failed to restore Web session', e);
+        }
+    }, []);
+
     useEffect(() => {
         const initializeAuth = async () => {
             if (Platform.OS === 'web') {
-                // Load Google Identity Services script
                 const scriptPromise = new Promise<void>((resolve) => {
                     const script = document.createElement('script');
                     script.src = 'https://accounts.google.com/gsi/client';
@@ -46,25 +61,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     document.head.appendChild(script);
                 });
 
-                // Restore session from AsyncStorage
-                const restoreSession = async () => {
-                    try {
-                        const storedUser = await AsyncStorage.getItem(USER_KEY);
-                        const storedToken = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
-                        if (storedUser && storedToken) {
-                            setUser(JSON.parse(storedUser));
-                            setAccessToken(storedToken);
-                            console.log('Web Auth session restored');
-                        }
-                    } catch (e) {
-                        console.error('Failed to restore Web auth session', e);
-                    }
-                };
-
-                await Promise.all([scriptPromise, restoreSession()]);
+                await Promise.all([scriptPromise, restoreWebSession()]);
                 setLoading(false);
             } else {
-                // Configure Google Sign-In for native (Android / iOS)
                 GoogleSignin.configure({
                     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
                     scopes: ['https://www.googleapis.com/auth/drive.appdata'],
@@ -73,10 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                 try {
                     const hasLoggedIn = await AsyncStorage.getItem(HAS_LOGGED_IN_KEY);
-                    const hasPrevious = await GoogleSignin.hasPreviousSignIn();
-
-                    if (hasLoggedIn === 'true' || hasPrevious) {
-                        console.log('Detected previous sign-in. Attempting silent sign-in...');
+                    if (hasLoggedIn === 'true' || await GoogleSignin.hasPreviousSignIn()) {
                         const userInfo = await GoogleSignin.signInSilently();
                         const tokens = await GoogleSignin.getTokens();
                         setAccessToken(tokens.accessToken);
@@ -89,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         await AsyncStorage.setItem(HAS_LOGGED_IN_KEY, 'true');
                     }
                 } catch (error) {
-                    console.log('Silent sign-in failed or no session:', error);
+                    console.log('AuthContext: Silent sign-in failed:', error);
                 } finally {
                     setLoading(false);
                 }
@@ -97,7 +93,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
 
         initializeAuth();
-    }, []);
+    }, [restoreWebSession]);
+
+    // Function to get a fresh token (Native only)
+    const getFreshToken = useCallback(async () => {
+        if (Platform.OS === 'web') return accessToken;
+        try {
+            const tokens = await GoogleSignin.getTokens();
+            setAccessToken(tokens.accessToken);
+            return tokens.accessToken;
+        } catch (e) {
+            console.error('AuthContext: Failed to refresh native token', e);
+            return accessToken;
+        }
+    }, [accessToken]);
 
     const signIn = async () => {
         if (Platform.OS === 'web') {
@@ -106,10 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 scope: 'https://www.googleapis.com/auth/drive.appdata email profile',
                 prompt: 'consent',
                 callback: async (response: any) => {
-                    if (response.error) {
-                        console.error('Google Auth Error:', response.error);
-                        return;
-                    }
+                    if (response.error) return;
 
                     if (response.access_token) {
                         const grantedScopes = response.scope || '';
@@ -119,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         }
 
                         setAccessToken(response.access_token);
-                        await AsyncStorage.setItem(ACCESS_TOKEN_KEY, response.access_token);
+                        localStorage.setItem(ACCESS_TOKEN_KEY, response.access_token);
 
                         try {
                             const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
@@ -133,33 +139,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                                 photo: data.picture,
                             };
                             setUser(userData);
-                            await AsyncStorage.setItem(USER_KEY, JSON.stringify(userData));
+                            localStorage.setItem(USER_KEY, JSON.stringify(userData));
                             await AsyncStorage.setItem(HAS_LOGGED_IN_KEY, 'true');
                         } catch (err) {
-                            console.error('Failed to fetch user info:', err);
+                            console.error('AuthContext: UserInfo fetch failed', err);
                         }
                     }
                 },
             });
             client.requestAccessToken();
         } else {
-            // Native (Android / iOS) Google Sign-In
             try {
-                await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+                await GoogleSignin.hasPlayServices();
                 const userInfo = await GoogleSignin.signIn();
                 const tokens = await GoogleSignin.getTokens();
-
                 setAccessToken(tokens.accessToken);
-                const userData = {
+                setUser({
                     id: userInfo.data?.user.id ?? '',
                     email: userInfo.data?.user.email ?? '',
                     name: userInfo.data?.user.name ?? undefined,
                     photo: userInfo.data?.user.photo ?? undefined,
-                };
-                setUser(userData);
+                });
                 await AsyncStorage.setItem(HAS_LOGGED_IN_KEY, 'true');
-            } catch (error: any) {
-                // handle errors...
+            } catch (error) {
+                console.error('AuthContext: Native Sign-In Error', error);
             }
         }
     };
@@ -168,10 +171,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const db = await getDatabase();
         await db.clearDatabase();
         await AsyncStorage.removeItem(HAS_LOGGED_IN_KEY);
-        await AsyncStorage.removeItem(USER_KEY);
-        await AsyncStorage.removeItem(ACCESS_TOKEN_KEY);
 
         if (Platform.OS === 'web') {
+            localStorage.removeItem(USER_KEY);
+            localStorage.removeItem(ACCESS_TOKEN_KEY);
             if (accessToken) {
                 try {
                     (window as any).google.accounts.oauth2.revoke(accessToken, () => {
@@ -179,7 +182,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         setAccessToken(null);
                     });
                 } catch (e) {
-                    console.error('Error revoking token:', e);
                     setUser(null);
                     setAccessToken(null);
                 }
@@ -192,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 await GoogleSignin.revokeAccess();
                 await GoogleSignin.signOut();
             } catch (e) {
-                console.error('Sign out error:', e);
+                console.error('AuthContext: Native Sign-Out Error', e);
             } finally {
                 setUser(null);
                 setAccessToken(null);
@@ -201,7 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, accessToken, signIn, signOut }}>
+        <AuthContext.Provider value={{ user, loading, accessToken, signIn, signOut, getFreshToken }}>
             {children}
         </AuthContext.Provider>
     );

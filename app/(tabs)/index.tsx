@@ -35,7 +35,7 @@ const CARD_WIDTH = (SCREEN_WIDTH - Spacing.lg * 2 - CARD_MARGIN) / 2;
 export default function MemoListScreen() {
     const { memos, loading, createMemo, updateMemo, deleteMemo, refreshMemos } = useMemos();
     const { user, signIn, signOut, loading: authLoading } = useAuth();
-    const { isSyncing } = useSync();
+    const { isSyncing, lastSyncedAt, performSync } = useSync();
     const colors = useThemeColors();
     const colorScheme = useColorScheme();
     const insets = useSafeAreaInsets();
@@ -125,9 +125,13 @@ export default function MemoListScreen() {
 
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
-        await refreshMemos();
+        if (user) {
+            await performSync('pull');
+        } else {
+            await refreshMemos();
+        }
         setRefreshing(false);
-    }, [refreshMemos]);
+    }, [refreshMemos, performSync, user]);
 
     const handleCreateMemo = async () => {
         const memo = await createMemo();
@@ -274,7 +278,7 @@ export default function MemoListScreen() {
                         let label = '';
                         if (trigger.type === 'datetime' && trigger.scheduledAt) {
                             const d = new Date(trigger.scheduledAt);
-                            label = `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
+                            label = `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
                         } else if (trigger.type === 'timer') {
                             label = 'タイマー';
                         } else if (trigger.type === 'location_enter') {
@@ -349,6 +353,11 @@ export default function MemoListScreen() {
                         <Image source={require('../../assets/keepreminder_icon.png')} style={{ width: 26, height: 26, borderRadius: 6 }} />
                     </View>
                     <Text style={[styles.headerTitle, { color: colors.text }]}>KeepReminder</Text>
+                    {lastSyncedAt && (
+                        <Text style={[styles.lastSyncText, { color: colors.textTertiary }]}>
+                            {lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })} 同期済
+                        </Text>
+                    )}
                 </View>
 
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
@@ -679,6 +688,11 @@ const styles = StyleSheet.create({
         borderRadius: 10,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    lastSyncText: {
+        fontSize: 10,
+        marginLeft: 4,
+        marginTop: 4,
     },
     headerTitle: {
         fontSize: FontSize.xl,
