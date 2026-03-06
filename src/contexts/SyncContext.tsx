@@ -5,6 +5,7 @@ import { useAuth } from './AuthContext';
 import { useMemos } from './MemoContext';
 import { GoogleDriveService } from '../services/GoogleDriveService';
 import { TombstoneService } from '../services/TombstoneService';
+import { SyncClockService } from '../services/SyncClockService';
 import * as MemoRepo from '../database/repositories/memoRepository';
 import * as TriggerRepo from '../database/repositories/triggerRepository';
 
@@ -112,6 +113,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
                 const cloudFileUpdatedAtStr = cloudData.updatedAt || new Date(0).toISOString();
 
+                // Keep track of the latest cloud time to handle drift
+                await SyncClockService.updateMaxSeenCloudTime(cloudFileUpdatedAtStr);
+
                 // 1. ALWAYS PULL AND MERGE if cloud has changed since our last sync
                 if (!lastSyncedCloudUpdatedAtRef.current || cloudFileUpdatedAtStr !== lastSyncedCloudUpdatedAtRef.current) {
                     const localMemos = await MemoRepo.getAllMemos();
@@ -191,27 +195,54 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                     await TombstoneService.cleanupTombstones();
                     const currentTombstones = await TombstoneService.getTombstones();
 
-                    const finalMemos = await MemoRepo.getAllMemos();
-                    const finalDeleted = await MemoRepo.getDeletedMemos();
+                    let finalMemos = await MemoRepo.getAllMemos();
+                    let finalDeleted = await MemoRepo.getDeletedMemos();
+                    let allFinal = [...finalMemos, ...finalDeleted];
+                    let hasTimestampAdjustments = false;
 
-                    // Clock Drift Compensation: 
-                    const cloudTime = new Date(cloudFileUpdatedAtStr).getTime();
-                    const localNow = Date.now();
-                    const correctedTime = Math.max(localNow, cloudTime + 1);
-                    const correctedIso = new Date(correctedTime).toISOString();
+                    // AUTO-BUMP: If local is logically different from cloud BUT timestamp is trailing, fix it
+                    for (const m of allFinal) {
+                        const cloudM = cloudData.memos.find((cm: any) => cm.id === m.id);
+                        if (cloudM) {
+                            const cloudUT = new Date(cloudM.updatedAt).getTime();
+                            const localUT = new Date(m.updatedAt).getTime();
+
+                            // Check for logical difference (simplified check: title, content, blocks count, deletedAt)
+                            const isDifferent = m.title !== cloudM.title ||
+                                m.content !== cloudM.content ||
+                                m.deletedAt !== cloudM.deletedAt ||
+                                (m.blocks?.length !== cloudM.blocks?.length);
+
+                            if (isDifferent && localUT <= cloudUT) {
+                                console.log(`SyncContext: [BUMP] Local memo ${m.id} trails cloud (${m.updatedAt} <= ${cloudM.updatedAt}). Up-dating to safe time.`);
+                                const safeNow = await SyncClockService.getSafeNow();
+                                m.updatedAt = safeNow;
+                                if (m.deletedAt) m.deletedAt = safeNow; // If it was a trash move, bump that too
+                                await MemoRepo.upsertMemo(m);
+                                hasTimestampAdjustments = true;
+                            }
+                        }
+                    }
+
+                    if (hasTimestampAdjustments) {
+                        await refreshMemos();
+                    }
+
+                    // Clock Drift Compensation for the file itself: 
+                    const safeNowForFile = await SyncClockService.getSafeNow();
 
                     const dataToUpload = {
                         version: 2,
                         memos: [...finalMemos, ...finalDeleted],
                         tombstones: currentTombstones,
-                        updatedAt: correctedIso
+                        updatedAt: safeNowForFile
                     };
 
                     console.log(`SyncContext: Pushing data to cloud... (Memos: ${dataToUpload.memos.length}, Tombstones: ${Object.keys(dataToUpload.tombstones).length})`);
                     await GoogleDriveService.uploadFile(tokenToUse, DB_FILE_NAME, dataToUpload, fileId);
-                    setLastSyncedCloudUpdatedAt(correctedIso);
-                    lastSyncedCloudUpdatedAtRef.current = correctedIso;
-                    await AsyncStorage.setItem(LAST_CLOUD_UPDATED_AT_KEY, correctedIso);
+                    setLastSyncedCloudUpdatedAt(safeNowForFile);
+                    lastSyncedCloudUpdatedAtRef.current = safeNowForFile;
+                    await AsyncStorage.setItem(LAST_CLOUD_UPDATED_AT_KEY, safeNowForFile);
                 }
             } else if (mode === 'push') {
                 // Initial creation in cloud

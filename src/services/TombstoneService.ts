@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SyncClockService } from './SyncClockService';
 
 const LAST_TOMBSTONES_KEY = '@KeepReminder:last_tombstones';
 
@@ -23,7 +24,7 @@ export class TombstoneService {
 
     static async addTombstone(id: string): Promise<void> {
         const tombstones = { ...(await this.getTombstones()) };
-        const now = new Date().toISOString();
+        const now = await SyncClockService.getSafeNow();
 
         // Safety: only update if new or later than existing (though usually it's just added)
         if (!tombstones[id] || new Date(now).getTime() > new Date(tombstones[id]).getTime()) {

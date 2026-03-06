@@ -6,6 +6,7 @@ import * as TriggerRepo from '../database/repositories/triggerRepository';
 import { getDatabase } from '../database/db';
 import { useAuth } from './AuthContext';
 import { TombstoneService } from '../services/TombstoneService';
+import { SyncClockService } from '../services/SyncClockService';
 
 interface MemoContextType {
     memos: MemoWithTriggers[];
@@ -91,20 +92,21 @@ export function MemoProvider({ children }: { children: ReactNode }) {
     }, [refreshMemos]);
 
     const updateMemoHandler = useCallback(async (id: string, updates: Partial<Memo>) => {
-        await MemoRepo.updateMemo(id, updates);
-        setMemos(prev => prev.map(m => m.id === id ? { ...m, ...updates, updatedAt: new Date().toISOString() } : m));
+        const safeNow = await SyncClockService.getSafeNow();
+        await MemoRepo.updateMemo(id, updates, safeNow);
+        setMemos(prev => prev.map(m => m.id === id ? { ...m, ...updates, updatedAt: safeNow } : m));
     }, []);
 
     const deleteMemoHandler = useCallback(async (id: string) => {
         if (Platform.OS === 'web') console.log('MemoContext: deleteMemo starting', id);
         try {
-            await MemoRepo.deleteMemo(id);
-            const now = new Date().toISOString();
+            const safeNow = await SyncClockService.getSafeNow();
+            await MemoRepo.deleteMemo(id, safeNow);
 
             setMemos(prev => {
                 const memoToDelete = prev.find(m => m.id === id);
                 if (memoToDelete) {
-                    const updatedMemo = { ...memoToDelete, deletedAt: now, updatedAt: now };
+                    const updatedMemo = { ...memoToDelete, deletedAt: safeNow, updatedAt: safeNow };
                     setDeletedMemos(prevDeleted => [updatedMemo, ...prevDeleted]);
                     return prev.filter(m => m.id !== id);
                 }
@@ -121,12 +123,12 @@ export function MemoProvider({ children }: { children: ReactNode }) {
     const restoreMemoHandler = useCallback(async (id: string) => {
         if (Platform.OS === 'web') console.log('MemoContext: restoreMemo starting', id);
         try {
-            await MemoRepo.restoreMemo(id);
-            const now = new Date().toISOString();
+            const safeNow = await SyncClockService.getSafeNow();
+            await MemoRepo.restoreMemo(id, safeNow);
             const memoToRestore = deletedMemos.find(m => m.id === id);
             if (memoToRestore) {
                 setDeletedMemos(prev => prev.filter(m => m.id !== id));
-                setMemos(prev => [{ ...memoToRestore, deletedAt: null, updatedAt: now }, ...prev].sort((a, b) => {
+                setMemos(prev => [{ ...memoToRestore, deletedAt: null, updatedAt: safeNow }, ...prev].sort((a, b) => {
                     if (a.isPinned !== b.isPinned) return (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0);
                     return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
                 }));

@@ -60,10 +60,11 @@ export async function getDeletedMemos(): Promise<Memo[]> {
 
 export async function updateMemo(
     id: string,
-    updates: Partial<Memo>
+    updates: Partial<Memo>,
+    customUpdatedAt?: string
 ): Promise<void> {
     const db = await getDatabase();
-    const now = new Date().toISOString();
+    const now = customUpdatedAt || new Date().toISOString();
     const setClauses: string[] = [];
     const values: any[] = [];
 
@@ -112,6 +113,8 @@ export async function updateMemo(
 
     setClauses.push('updatedAt = ?');
     values.push(now);
+
+    // Add ID for WHERE clause
     values.push(id);
 
     await db.runAsync(
@@ -120,15 +123,15 @@ export async function updateMemo(
     );
 }
 
-export async function deleteMemo(id: string): Promise<void> {
+export async function deleteMemo(id: string, customUpdatedAt?: string): Promise<void> {
     const db = await getDatabase();
-    const now = new Date().toISOString();
+    const now = customUpdatedAt || new Date().toISOString();
     await db.runAsync('UPDATE memos SET deletedAt = ?, updatedAt = ? WHERE id = ?', [now, now, id]);
 }
 
-export async function restoreMemo(id: string): Promise<void> {
+export async function restoreMemo(id: string, customUpdatedAt?: string): Promise<void> {
     const db = await getDatabase();
-    const now = new Date().toISOString();
+    const now = customUpdatedAt || new Date().toISOString();
     await db.runAsync('UPDATE memos SET deletedAt = NULL, updatedAt = ? WHERE id = ?', [now, id]);
 }
 
