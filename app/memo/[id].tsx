@@ -81,8 +81,9 @@ export default function MemoEditScreen() {
 
     // Auto-save on change
     useEffect(() => {
-        if (!id) return;
+        if (!id || isDeleting.current) return;
         const timer = setTimeout(() => {
+            if (isDeleting.current) return;
             // Update redundant content field for search compatibility
             const plainContent = blocks.filter(b => b.type === 'text').map(b => b.content).join('\n');
             updateMemo(id, { title, content: plainContent, color, blocks });
@@ -110,9 +111,12 @@ export default function MemoEditScreen() {
         setTimeout(() => setTagTooltip(prev => ({ ...prev, visible: false })), 2000);
     };
 
-    const handleDelete = () => {
+    const isDeleting = useRef(false);
+
+    const handleDelete = async () => {
         const performDelete = async () => {
             if (id) {
+                isDeleting.current = true;
                 await deleteMemo(id);
                 router.back();
             }
@@ -120,7 +124,7 @@ export default function MemoEditScreen() {
 
         if (Platform.OS === 'web') {
             if (window.confirm('このメモを削除してもよろしいですか？')) {
-                performDelete();
+                await performDelete();
             }
             return;
         }

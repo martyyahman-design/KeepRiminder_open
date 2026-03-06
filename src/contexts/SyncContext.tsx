@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useCallback, useState } from 'react';
+import React, { createContext, useContext, useEffect, useCallback, useState, useRef, ReactNode } from 'react';
+import { Platform } from 'react-native';
 import { useAuth } from './AuthContext';
 import { useMemos } from './MemoContext';
 import { GoogleDriveService } from '../services/GoogleDriveService';
@@ -7,140 +8,181 @@ import * as TriggerRepo from '../database/repositories/triggerRepository';
 
 interface SyncContextType {
     isSyncing: boolean;
-    isInitialSyncDone: boolean;
     lastSyncedAt: Date | null;
-    syncNow: () => Promise<void>;
+    isInitialSyncDone: boolean;
+    performSync: (mode?: 'pull' | 'push') => Promise<void>;
 }
 
 const SyncContext = createContext<SyncContextType | undefined>(undefined);
 
-const DB_FILE_NAME = 'keepreminder_db.json';
+const DB_FILE_NAME = 'keepreminder_backup.json';
 
-export function SyncProvider({ children }: { children: React.ReactNode }) {
-    const { accessToken, user } = useAuth();
-    const { memos, refreshMemos } = useMemos();
+export function SyncProvider({ children }: { children: ReactNode }) {
+    const { accessToken, getFreshToken } = useAuth();
+    const { memos, deletedMemos, refreshMemos } = useMemos();
     const [isSyncing, setIsSyncing] = useState(false);
     const [isInitialSyncDone, setIsInitialSyncDone] = useState(false);
     const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+    const isSyncingRef = useRef(false);
+    const isInitialSyncDoneRef = useRef(false);
 
-    const pullFromCloud = useCallback(async (token: string) => {
+    const performSync = useCallback(async (mode: 'pull' | 'push' = 'pull') => {
+        if (isSyncingRef.current) {
+            console.log(`SyncContext: performSync(${mode}) skipped, already syncing.`);
+            return;
+        }
+
+        // Get fresh token if on native
+        let tokenToUse = accessToken;
+        if (Platform.OS !== 'web') {
+            tokenToUse = await getFreshToken();
+        }
+
+        if (!tokenToUse) {
+            console.log(`SyncContext: performSync(${mode}) aborted, no access token.`);
+            return;
+        }
+
+        // IMPORTANT: Prevent PUSH if the first PULL (initial sync) hasn't completed yet.
+        // This avoids overwriting cloud data with empty local data on fresh login.
+        if (mode === 'push' && !isInitialSyncDoneRef.current) {
+            console.log(`SyncContext: performSync(push) blocked until initial pull is done.`);
+            return;
+        }
+
+        isSyncingRef.current = true;
         setIsSyncing(true);
-        try {
-            const fileId = await GoogleDriveService.findFile(token, DB_FILE_NAME);
-            if (fileId) {
-                const cloudData = await GoogleDriveService.downloadFile(token, fileId);
-                console.log('Cloud data downloaded. Merging...');
 
-                // 1. Get local data
+        console.log(`SyncContext: performSync(${mode}) started. isInitialSyncDone: ${isInitialSyncDoneRef.current}`);
+        try {
+            const fileId = await GoogleDriveService.findFile(tokenToUse, DB_FILE_NAME);
+
+            // 1. ALWAYS PULL AND MERGE if file exists
+            if (fileId) {
+                const cloudData = await GoogleDriveService.downloadFile(tokenToUse, fileId);
                 const localMemos = await MemoRepo.getAllMemos();
                 const localDeletedMemos = await MemoRepo.getDeletedMemos();
                 const allLocalMemos = [...localMemos, ...localDeletedMemos];
 
-                // 2. Merge Memos (Last Write Wins)
-                if (cloudData.memos) {
-                    let hasChanges = false;
-                    const cloudMemoIds = new Set(cloudData.memos.map((m: any) => m.id));
+                console.log(`SyncContext: Cloud memos: ${cloudData.memos?.length || 0}, Local memos: ${allLocalMemos.length}`);
 
-                    // Check for local memos that should be deleted (hard delete on other device)
-                    for (const localMemo of allLocalMemos) {
-                        if (!cloudMemoIds.has(localMemo.id)) {
-                            console.log(`Memo ${localMemo.id} missing from cloud. Hard deleting locally.`);
-                            await MemoRepo.permanentlyDeleteMemo(localMemo.id);
-                            hasChanges = true;
-                        }
-                    }
+                let hasLocalChanges = false;
+
+                // Merge Logic: Conflict resolution (Last Write Wins)
+                if (cloudData.memos) {
+                    // DANGEROUS LOGIC REMOVED: 
+                    // No longer delete local memos if missing from cloud. 
+                    // New local memos will just be uploaded later.
 
                     for (const cloudMemo of cloudData.memos) {
                         const localMemo = allLocalMemos.find(m => m.id === cloudMemo.id);
 
-                        // Cloud memo is newer or doesn't exist locally
-                        if (!localMemo || new Date(cloudMemo.updatedAt).getTime() > new Date(localMemo.updatedAt).getTime()) {
+                        // Decide whether to update local based onUpdatedAt
+                        const cloudUpdated = new Date(cloudMemo.updatedAt).getTime();
+                        const localUpdated = localMemo ? new Date(localMemo.updatedAt).getTime() : 0;
+
+                        if (!localMemo || cloudUpdated > localUpdated) {
+                            console.log(`SyncContext: Updating local memo ${cloudMemo.id} from cloud (Cloud: ${cloudMemo.updatedAt}, Local: ${localMemo?.updatedAt || 'NEW'}).`);
                             await MemoRepo.upsertMemo(cloudMemo);
                             if (cloudMemo.triggers) {
-                                for (const trigger of cloudMemo.triggers) {
-                                    await TriggerRepo.upsertTrigger(trigger);
-                                }
+                                for (const t of cloudMemo.triggers) await TriggerRepo.upsertTrigger(t);
                             }
-                            hasChanges = true;
+                            hasLocalChanges = true;
                         }
-                    }
-                    if (hasChanges) {
-                        await refreshMemos();
                     }
                 }
 
-                setLastSyncedAt(new Date());
+                if (hasLocalChanges) {
+                    console.log('SyncContext: Local changes applied after pull. Refreshing memos.');
+                    await refreshMemos();
+                }
+
+                // 2. If we intended to push, or if we have something new to share, push back
+                if (mode === 'push') {
+                    // Re-fetch everything after possible merge
+                    const finalMemos = await MemoRepo.getAllMemos();
+                    const finalDeleted = await MemoRepo.getDeletedMemos();
+                    const dataToUpload = {
+                        memos: [...finalMemos, ...finalDeleted],
+                        version: 1,
+                        updatedAt: new Date().toISOString()
+                    };
+                    console.log(`SyncContext: Pushing data to cloud... (Memos: ${dataToUpload.memos.length})`);
+                    await GoogleDriveService.uploadFile(tokenToUse, DB_FILE_NAME, dataToUpload, fileId);
+                    console.log('SyncContext: Pushed merged data back to cloud.');
+                }
+            } else if (mode === 'push') {
+                // Initial creation in cloud
+                const localMemos = await MemoRepo.getAllMemos();
+                const localDeleted = await MemoRepo.getDeletedMemos();
+                const dataToUpload = {
+                    memos: [...localMemos, ...localDeleted],
+                    version: 1,
+                    updatedAt: new Date().toISOString()
+                };
+                await GoogleDriveService.uploadFile(tokenToUse, DB_FILE_NAME, dataToUpload);
+                console.log('SyncContext: Created initial DB file in cloud.');
+            } else {
+                console.log('SyncContext: No DB file found in cloud. Marking initial sync as done with empty cloud.');
+            }
+
+            setLastSyncedAt(new Date());
+            if (!isInitialSyncDoneRef.current) {
+                isInitialSyncDoneRef.current = true;
+                setIsInitialSyncDone(true);
             }
         } catch (error) {
-            console.error('Failed to pull from cloud:', error);
+            console.error('SyncContext: Sync error:', error);
         } finally {
+            isSyncingRef.current = false;
             setIsSyncing(false);
-            setIsInitialSyncDone(true);
+            console.log(`SyncContext: performSync(${mode}) finished.`);
         }
-    }, [refreshMemos]);
+    }, [accessToken, getFreshToken, refreshMemos]);
 
-    const pushToCloud = useCallback(async (token: string) => {
-        setIsSyncing(true);
-        try {
-            // Get the very latest data from DB before pushing
-            const localMemos = await MemoRepo.getAllMemos();
-            const localDeletedMemos = await MemoRepo.getDeletedMemos();
-            const allLocalMemos = [...localMemos, ...localDeletedMemos];
-
-            const fileId = await GoogleDriveService.findFile(token, DB_FILE_NAME);
-            const dataToUpload = {
-                memos: allLocalMemos,
-                version: 1,
-                updatedAt: new Date().toISOString()
-            };
-            await GoogleDriveService.uploadFile(token, DB_FILE_NAME, dataToUpload, fileId || undefined);
-            setLastSyncedAt(new Date());
-        } catch (error) {
-            console.error('Failed to push to cloud:', error);
-        } finally {
-            setIsSyncing(false);
-        }
-    }, []);
-
+    // Initial Sync
     useEffect(() => {
-        if (accessToken) {
-            pullFromCloud(accessToken);
-        } else {
-            setIsInitialSyncDone(true); // No token, so initial "sync" (or wait for one) is technically done
+        if (accessToken && !isInitialSyncDoneRef.current) {
+            console.log('SyncContext: Initial sync (first pull) triggered.');
+            performSync('pull');
+        } else if (!accessToken && !isInitialSyncDoneRef.current) {
+            // Not logged in yet, don't block work but don't mark as "sync done" in a way that allows push later
+            // Actually, if we're not logged in, we don't push anyway (accessToken guard in useEffect below)
         }
-    }, [accessToken, pullFromCloud]);
+    }, [accessToken, performSync]);
 
-    // Auto-save: push to cloud when memos change (with debounce)
+    // Auto-save (Push) when memos change
     useEffect(() => {
-        if (!accessToken || isSyncing || !isInitialSyncDone) return;
+        // Only trigger auto-save if accessToken is available and initial sync is done
+        if (!accessToken || !isInitialSyncDoneRef.current) return;
 
+        console.log(`SyncContext: Memos changed (${memos.length}), scheduling auto-save push in 5s...`);
         const timer = setTimeout(() => {
-            pushToCloud(accessToken);
-        }, 3000); // Reduce to 3 seconds debounce
+            console.log('SyncContext: Debounced auto-save push executing.');
+            performSync('push');
+        }, 5000); // 5 seconds debounce
 
         return () => clearTimeout(timer);
-    }, [memos, accessToken, isInitialSyncDone, pushToCloud]);
+    }, [memos, deletedMemos, accessToken, performSync]);
 
-    // Background Polling: pull from cloud every 60 seconds
+    // Background Polling
     useEffect(() => {
-        if (!accessToken || isSyncing) return;
+        if (!accessToken) return;
 
+        console.log('SyncContext: Starting background polling interval.');
         const interval = setInterval(() => {
-            console.log('Auto-polling from cloud...');
-            pullFromCloud(accessToken);
+            performSync('pull');
         }, 60000); // 60 seconds
 
         return () => clearInterval(interval);
-    }, [accessToken, pullFromCloud, isSyncing]);
+    }, [accessToken, performSync]);
 
     return (
         <SyncContext.Provider value={{
             isSyncing,
-            isInitialSyncDone,
             lastSyncedAt,
-            syncNow: async () => {
-                if (accessToken) await pushToCloud(accessToken);
-            }
+            isInitialSyncDone,
+            performSync
         }}>
             {children}
         </SyncContext.Provider>

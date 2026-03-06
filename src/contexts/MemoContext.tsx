@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
+import { Platform } from 'react-native';
 import { Memo, MemoWithTriggers, Trigger } from '../types/models';
 import * as MemoRepo from '../database/repositories/memoRepository';
 import * as TriggerRepo from '../database/repositories/triggerRepository';
@@ -29,6 +30,7 @@ export function MemoProvider({ children }: { children: ReactNode }) {
     const [deletedMemos, setDeletedMemos] = useState<MemoWithTriggers[]>([]);
     const [loading, setLoading] = useState(true);
     const { user } = useAuth();
+    const isRefreshingRef = useRef(false);
 
     const loadMemosWithTriggers = useCallback(async (isDeleted: boolean = false): Promise<MemoWithTriggers[]> => {
         const fetchMemos = isDeleted ? MemoRepo.getDeletedMemos : MemoRepo.getAllMemos;
@@ -43,16 +45,19 @@ export function MemoProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const refreshMemos = useCallback(async () => {
+        if (isRefreshingRef.current) return;
+        isRefreshingRef.current = true;
         try {
-            const [active, deleted] = await Promise.all([
-                loadMemosWithTriggers(false),
-                loadMemosWithTriggers(true)
-            ]);
+            console.log('MemoContext: refreshMemos starting');
+            const active = await loadMemosWithTriggers(false);
+            const deleted = await loadMemosWithTriggers(true);
             setMemos(active);
             setDeletedMemos(deleted);
+            console.log('MemoContext: refreshMemos finished');
         } catch (err) {
             console.error('Error loading memos:', err);
         } finally {
+            isRefreshingRef.current = false;
             setLoading(false);
         }
     }, [loadMemosWithTriggers]);
@@ -90,39 +95,73 @@ export function MemoProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const deleteMemoHandler = useCallback(async (id: string) => {
-        await MemoRepo.deleteMemo(id);
-        const memoToDelete = memos.find(m => m.id === id);
-        if (memoToDelete) {
-            const deletedAt = new Date().toISOString();
-            setMemos(prev => prev.filter(m => m.id !== id));
-            setDeletedMemos(prev => [{ ...memoToDelete, deletedAt }, ...prev]);
-        } else {
+        if (Platform.OS === 'web') console.log('MemoContext: deleteMemo starting', id);
+        try {
+            await MemoRepo.deleteMemo(id);
+            const now = new Date().toISOString();
+
+            setMemos(prev => {
+                const memoToDelete = prev.find(m => m.id === id);
+                if (memoToDelete) {
+                    const updatedMemo = { ...memoToDelete, deletedAt: now, updatedAt: now };
+                    setDeletedMemos(prevDeleted => [updatedMemo, ...prevDeleted]);
+                    return prev.filter(m => m.id !== id);
+                }
+                return prev;
+            });
+            if (Platform.OS === 'web') alert('削除しました');
+        } catch (err) {
+            console.error('Error deleting memo:', err);
+            if (Platform.OS === 'web') alert('削除中にエラー: ' + err);
             await refreshMemos();
         }
-    }, [memos, refreshMemos]);
+    }, [refreshMemos]);
 
     const restoreMemoHandler = useCallback(async (id: string) => {
-        await MemoRepo.restoreMemo(id);
-        const memoToRestore = deletedMemos.find(m => m.id === id);
-        if (memoToRestore) {
-            setDeletedMemos(prev => prev.filter(m => m.id !== id));
-            setMemos(prev => [{ ...memoToRestore, deletedAt: null }, ...prev].sort((a, b) => {
-                if (a.isPinned !== b.isPinned) return (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0);
-                return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-            }));
-        } else {
+        if (Platform.OS === 'web') console.log('MemoContext: restoreMemo starting', id);
+        try {
+            await MemoRepo.restoreMemo(id);
+            const now = new Date().toISOString();
+            const memoToRestore = deletedMemos.find(m => m.id === id);
+            if (memoToRestore) {
+                setDeletedMemos(prev => prev.filter(m => m.id !== id));
+                setMemos(prev => [{ ...memoToRestore, deletedAt: null, updatedAt: now }, ...prev].sort((a, b) => {
+                    if (a.isPinned !== b.isPinned) return (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0);
+                    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+                }));
+            } else {
+                await refreshMemos();
+            }
+            if (Platform.OS === 'web') alert('復元しました');
+        } catch (err) {
+            console.error('Error restoring memo:', err);
+            if (Platform.OS === 'web') alert('復元中にエラー: ' + err);
             await refreshMemos();
         }
     }, [deletedMemos, refreshMemos]);
 
     const permanentlyDeleteMemoHandler = useCallback(async (id: string) => {
-        await MemoRepo.permanentlyDeleteMemo(id);
-        setDeletedMemos(prev => prev.filter(m => m.id !== id));
+        if (Platform.OS === 'web') console.log('MemoContext: permanentlyDeleteMemo starting', id);
+        try {
+            await MemoRepo.permanentlyDeleteMemo(id);
+            setDeletedMemos(prev => prev.filter(m => m.id !== id));
+            if (Platform.OS === 'web') alert('完全に削除しました');
+        } catch (err) {
+            console.error('Error permanently deleting memo:', err);
+            if (Platform.OS === 'web') alert('完全削除中にエラー: ' + err);
+        }
     }, []);
 
     const emptyTrashHandler = useCallback(async () => {
-        await MemoRepo.emptyTrash();
-        setDeletedMemos([]);
+        if (Platform.OS === 'web') console.log('MemoContext: emptyTrash starting');
+        try {
+            await MemoRepo.emptyTrash();
+            setDeletedMemos([]);
+            if (Platform.OS === 'web') alert('ごみ箱を空にしました');
+        } catch (err) {
+            console.error('Error emptying trash:', err);
+            if (Platform.OS === 'web') alert('ごみ箱を空にする際にエラー: ' + err);
+        }
     }, []);
 
     const searchMemosHandler = useCallback(async (query: string): Promise<MemoWithTriggers[]> => {

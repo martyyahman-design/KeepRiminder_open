@@ -11,14 +11,14 @@ export default function TrashScreen() {
     const colors = useThemeColors();
     const colorScheme = useColorScheme();
 
-    const handleRestore = (id: string) => {
-        restoreMemo(id);
+    const handleRestore = async (id: string) => {
+        await restoreMemo(id);
     };
 
-    const handleDelete = (id: string) => {
+    const handleDelete = async (id: string) => {
         if (Platform.OS === 'web') {
             if (window.confirm('このメモを完全に削除しますか？\nこの操作は取り消せません。')) {
-                permanentlyDeleteMemo(id);
+                await permanentlyDeleteMemo(id);
             }
             return;
         }
@@ -33,12 +33,12 @@ export default function TrashScreen() {
         );
     };
 
-    const handleEmptyTrash = () => {
+    const handleEmptyTrash = async () => {
         if (deletedMemos.length === 0) return;
 
         if (Platform.OS === 'web') {
             if (window.confirm('ごみ箱を空にしますか？\nごみ箱内のすべてのメモを完全に削除します。この操作は取り消せません。')) {
-                emptyTrash();
+                await emptyTrash();
             }
             return;
         }

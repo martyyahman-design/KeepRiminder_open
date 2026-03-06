@@ -84,45 +84,85 @@ class InMemoryAdapter implements DatabaseAdapter {
     } else if (sqlLower.startsWith('update memos')) {
       const id = params?.[params.length - 1];
       const existing = this.db.memos.get(id);
+      console.log('InMemoryAdapter: UPDATE memos', { id, sql, params });
       if (existing) {
-        const setMatch = sql.match(/SET\s+(.+?)\s+WHERE/i);
-        if (setMatch && setMatch[1]) {
-          const fields = setMatch[1].split(',').map(f => f.trim().split('=')[0].trim());
-          let paramIdx = 0;
-          for (const field of fields) {
+        const setPart = sql.substring(sql.search(/SET/i) + 3, sql.search(/WHERE/i)).trim();
+        const assignments = setPart.split(',').map(a => a.trim());
+        let paramIdx = 0;
+        for (const assignment of assignments) {
+          const parts = assignment.split(/\s*=\s*/);
+          const field = parts[0].trim();
+          const valueExpr = parts[1].trim();
+
+          if (valueExpr === '?') {
             if (params && paramIdx < params.length - 1) {
               existing[field] = params[paramIdx];
               paramIdx++;
             }
+          } else if (valueExpr.toUpperCase() === 'NULL') {
+            existing[field] = null;
+          } else {
+            // Basic literal support (strings or numbers)
+            let val = valueExpr.replace(/^'|'$/g, '');
+            if (!isNaN(Number(val))) existing[field] = Number(val);
+            else existing[field] = val;
           }
-          this.db.memos.set(id, existing);
         }
+        this.db.memos.set(id, { ...existing });
+        console.log('InMemoryAdapter: Updated memo state', existing);
       }
     } else if (sqlLower.startsWith('update triggers')) {
       const id = params?.[params.length - 1];
       const existing = this.db.triggers.get(id);
       if (existing) {
-        const setMatch = sql.match(/SET\s+(.+?)\s+WHERE/i);
-        if (setMatch && setMatch[1]) {
-          const fields = setMatch[1].split(',').map(f => f.trim().split('=')[0].trim());
-          let paramIdx = 0;
-          for (const field of fields) {
+        const setPart = sql.substring(sql.search(/SET/i) + 3, sql.search(/WHERE/i)).trim();
+        const assignments = setPart.split(',').map(a => a.trim());
+        let paramIdx = 0;
+        for (const assignment of assignments) {
+          const parts = assignment.split(/\s*=\s*/);
+          const field = parts[0].trim();
+          const valueExpr = parts[1].trim();
+          if (valueExpr === '?') {
             if (params && paramIdx < params.length - 1) {
               existing[field] = params[paramIdx];
               paramIdx++;
             }
+          } else if (valueExpr.toUpperCase() === 'NULL') {
+            existing[field] = null;
           }
-          this.db.triggers.set(id, existing);
         }
+        this.db.triggers.set(id, { ...existing });
       }
     } else if (sqlLower.startsWith('delete from memos')) {
-      const id = params?.[0];
-      this.db.memos.delete(id);
-      const triggersToDelete: string[] = [];
-      for (const [tid, trigger] of this.db.triggers) {
-        if (trigger.memoId === id) triggersToDelete.push(tid);
+      console.log('InMemoryAdapter: DELETE FROM memos', { sql, params });
+      if (sqlLower.includes('where deletedat is not null')) {
+        // Empty trash
+        let count = 0;
+        for (const [id, memo] of this.db.memos) {
+          if (memo.deletedAt) {
+            this.db.memos.delete(id);
+            count++;
+            // Delete associated triggers
+            for (const [tid, trigger] of this.db.triggers) {
+              if (trigger.memoId === id) this.db.triggers.delete(tid);
+            }
+          }
+        }
+        console.log(`InMemoryAdapter: Emptied trash, removed ${count} memos`);
+      } else {
+        // Individual delete
+        const id = params?.[0];
+        if (id) {
+          const result = this.db.memos.delete(id);
+          console.log(`InMemoryAdapter: Permanently deleted memo ${id}, success: ${result}`);
+          // Delete associated triggers
+          for (const [tid, trigger] of this.db.triggers) {
+            if (trigger.memoId === id) this.db.triggers.delete(tid);
+          }
+        } else {
+          console.warn('InMemoryAdapter: DELETE FROM memos called without ID in params');
+        }
       }
-      triggersToDelete.forEach(tid => this.db.triggers.delete(tid));
     } else if (sqlLower.startsWith('delete from triggers')) {
       if (sqlLower.includes('memoid')) {
         const memoId = params?.[0];
