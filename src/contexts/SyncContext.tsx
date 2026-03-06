@@ -110,6 +110,34 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                     console.log(`SyncContext: Pushing data to cloud... (Memos: ${dataToUpload.memos.length})`);
                     await GoogleDriveService.uploadFile(tokenToUse, DB_FILE_NAME, dataToUpload, fileId);
                     console.log('SyncContext: Pushed merged data back to cloud.');
+                } else if (mode === 'pull') {
+                    // 3. DETECT DELETIONS (Sync-Delete)
+                    // If cloud is newer than our last sync, any local memo NOT in cloud was likely deleted elsewhere
+                    const cloudFileUpdatedAt = new Date(cloudData.updatedAt || 0).getTime();
+                    const localLastSyncTime = lastSyncedAt ? lastSyncedAt.getTime() : 0;
+
+                    if (cloudFileUpdatedAt > localLastSyncTime) {
+                        const localMemos = await MemoRepo.getAllMemos();
+                        const localDeleted = await MemoRepo.getDeletedMemos();
+                        const allLocal = [...localMemos, ...localDeleted];
+
+                        for (const local of allLocal) {
+                            const existsInCloud = cloudData.memos?.some((m: any) => m.id === local.id);
+                            if (!existsInCloud) {
+                                // Double check: only delete if local hasn't been updated since last sync
+                                if (new Date(local.updatedAt).getTime() <= localLastSyncTime) {
+                                    console.log(`SyncContext: Deleting local memo ${local.id} because it's missing from newer cloud backup.`);
+                                    await MemoRepo.permanentlyDeleteMemo(local.id);
+                                    hasLocalChanges = true;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (hasLocalChanges) {
+                        console.log('SyncContext: Local changes (including deletions) applied after pull. Refreshing.');
+                        await refreshMemos();
+                    }
                 }
             } else if (mode === 'push') {
                 // Initial creation in cloud

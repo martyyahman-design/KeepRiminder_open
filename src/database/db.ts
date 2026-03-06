@@ -198,14 +198,14 @@ class InMemoryAdapter implements DatabaseAdapter {
     if (sqlLower.includes('from memos')) {
       let results = Array.from(this.db.memos.values());
 
-      // 論理削除の考慮（特に指定がない場合は削除されていないものだけを返す）
-      if (!sqlLower.includes('deletedat is not null') && !sqlLower.includes('deletedat is null')) {
-        // デフォルトは削除されていないもの
-        results = results.filter(m => !m.deletedAt);
-      } else if (sqlLower.includes('deletedat is not null')) {
-        results = results.filter(m => !!m.deletedAt);
+      // Logical delete consideration: filter based on deletedAt presence
+      if (sqlLower.includes('deletedat is not null')) {
+        results = results.filter(m => m.deletedAt != null);
       } else if (sqlLower.includes('deletedat is null')) {
-        results = results.filter(m => !m.deletedAt);
+        results = results.filter(m => m.deletedAt == null);
+      } else {
+        // Default: active memos only (not deleted)
+        results = results.filter(m => m.deletedAt == null);
       }
 
       if (sqlLower.includes('where id =')) {
