@@ -1,10 +1,14 @@
 import React, { createContext, useContext, useEffect, useCallback, useState, useRef, ReactNode } from 'react';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
 import { useMemos } from './MemoContext';
 import { GoogleDriveService } from '../services/GoogleDriveService';
 import * as MemoRepo from '../database/repositories/memoRepository';
 import * as TriggerRepo from '../database/repositories/triggerRepository';
+
+const LAST_SYNCED_AT_KEY = '@KeepReminder:last_synced_at';
+const LAST_CLOUD_UPDATED_AT_KEY = '@KeepReminder:last_cloud_updated_at';
 
 interface SyncContextType {
     isSyncing: boolean;
@@ -28,6 +32,31 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     const lastSyncedCloudUpdatedAtRef = useRef<string | null>(null);
     const isSyncingRef = useRef(false);
     const isInitialSyncDoneRef = useRef(false);
+
+    // Persistence: Load sync state on mount
+    useEffect(() => {
+        const loadSyncState = async () => {
+            try {
+                const [storedAt, storedCloud] = await Promise.all([
+                    AsyncStorage.getItem(LAST_SYNCED_AT_KEY),
+                    AsyncStorage.getItem(LAST_CLOUD_UPDATED_AT_KEY),
+                ]);
+                if (storedAt) {
+                    const date = new Date(storedAt);
+                    setLastSyncedAt(date);
+                    lastSyncedAtRef.current = date;
+                }
+                if (storedCloud) {
+                    setLastSyncedCloudUpdatedAt(storedCloud);
+                    lastSyncedCloudUpdatedAtRef.current = storedCloud;
+                }
+                console.log('SyncContext: Persistent sync state loaded', { storedAt, storedCloud });
+            } catch (e) {
+                console.error('SyncContext: Failed to load sync state', e);
+            }
+        };
+        loadSyncState();
+    }, []);
 
     const performSync = useCallback(async (mode: 'pull' | 'push' = 'pull') => {
         if (isSyncingRef.current) {
@@ -75,6 +104,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                     const localMemos = await MemoRepo.getAllMemos();
                     const localDeletedMemos = await MemoRepo.getDeletedMemos();
                     const allLocalMemos = [...localMemos, ...localDeletedMemos];
+                    const lastSyncTime = lastSyncedAtRef.current ? lastSyncedAtRef.current.getTime() : 0;
 
                     console.log(`SyncContext: Cloud changed (Cloud: ${cloudFileUpdatedAtStr}, Last: ${lastSyncedCloudUpdatedAtRef.current}). Merging...`);
 
@@ -85,8 +115,24 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                         const cloudUpdated = new Date(cloudMemo.updatedAt).getTime();
                         const localUpdated = localMemo ? new Date(localMemo.updatedAt).getTime() : 0;
 
-                        if (!localMemo || cloudUpdated > localUpdated) {
-                            console.log(`SyncContext: Updating local memo ${cloudMemo.id} from cloud.`);
+                        // RESURRECTION PREVENTION: 
+                        // If memo is missing locally, only re-download it if its cloud updatedAt is newer than our LAST sync.
+                        // If it's OLDER than our last sync, it means we probably deleted it locally since then, 
+                        // so we should NOT re-download it.
+                        if (!localMemo) {
+                            if (cloudUpdated > lastSyncTime) {
+                                console.log(`SyncContext: New memo ${cloudMemo.id} from cloud.`);
+                                await MemoRepo.upsertMemo(cloudMemo);
+                                if (cloudMemo.triggers) {
+                                    for (const t of cloudMemo.triggers) await TriggerRepo.upsertTrigger(t);
+                                }
+                                hasLocalChanges = true;
+                            } else {
+                                console.log(`SyncContext: Skipping cloud memo ${cloudMemo.id} (cloud updatedAt ${cloudMemo.updatedAt} is older than last sync ${lastSyncedAtRef.current?.toISOString()}). Likely already deleted locally.`);
+                            }
+                        } else if (cloudUpdated > localUpdated) {
+                            // Update existing if cloud is newer
+                            console.log(`SyncContext: Updating existing local memo ${cloudMemo.id} from cloud.`);
                             await MemoRepo.upsertMemo(cloudMemo);
                             if (cloudMemo.triggers) {
                                 for (const t of cloudMemo.triggers) await TriggerRepo.upsertTrigger(t);
@@ -99,12 +145,11 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                     // Only run this if we are intentionally pulling OR doing a push-merge
                     // Safety check: only delete if the cloud data we just got is valid
                     if (mode === 'pull' && Array.isArray(cloudData.memos)) {
-                        const localLastSyncTime = lastSyncedAtRef.current ? lastSyncedAtRef.current.getTime() : 0;
                         for (const local of allLocalMemos) {
                             const existsInCloud = cloudData.memos.some((m: any) => m.id === local.id);
                             if (!existsInCloud) {
                                 // Delete if local hasn't been updated since our last sync
-                                if (new Date(local.updatedAt).getTime() <= localLastSyncTime) {
+                                if (new Date(local.updatedAt).getTime() <= lastSyncTime) {
                                     console.log(`SyncContext: Deleting local memo ${local.id} (missing from newer cloud backup).`);
                                     await MemoRepo.permanentlyDeleteMemo(local.id);
                                     hasLocalChanges = true;
@@ -118,6 +163,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                     }
                     setLastSyncedCloudUpdatedAt(cloudFileUpdatedAtStr);
                     lastSyncedCloudUpdatedAtRef.current = cloudFileUpdatedAtStr;
+                    await AsyncStorage.setItem(LAST_CLOUD_UPDATED_AT_KEY, cloudFileUpdatedAtStr);
                 }
 
                 // 3. PUSH back if requested
@@ -141,6 +187,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                     await GoogleDriveService.uploadFile(tokenToUse, DB_FILE_NAME, dataToUpload, fileId);
                     setLastSyncedCloudUpdatedAt(correctedIso);
                     lastSyncedCloudUpdatedAtRef.current = correctedIso;
+                    await AsyncStorage.setItem(LAST_CLOUD_UPDATED_AT_KEY, correctedIso);
                 }
             } else if (mode === 'push') {
                 // Initial creation in cloud
@@ -155,12 +202,14 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                 await GoogleDriveService.uploadFile(tokenToUse, DB_FILE_NAME, dataToUpload);
                 setLastSyncedCloudUpdatedAt(now);
                 lastSyncedCloudUpdatedAtRef.current = now;
+                await AsyncStorage.setItem(LAST_CLOUD_UPDATED_AT_KEY, now);
                 console.log('SyncContext: Created initial DB file in cloud.');
             }
 
             const nowSync = new Date();
             setLastSyncedAt(nowSync);
             lastSyncedAtRef.current = nowSync;
+            await AsyncStorage.setItem(LAST_SYNCED_AT_KEY, nowSync.toISOString());
             if (!isInitialSyncDoneRef.current) {
                 isInitialSyncDoneRef.current = true;
                 setIsInitialSyncDone(true);
