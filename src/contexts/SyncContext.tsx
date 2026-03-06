@@ -18,7 +18,7 @@ const SyncContext = createContext<SyncContextType | undefined>(undefined);
 const DB_FILE_NAME = 'keepreminder_backup.json';
 
 export function SyncProvider({ children }: { children: ReactNode }) {
-    const { accessToken, getFreshToken } = useAuth();
+    const { accessToken, getFreshToken, clearAccessToken } = useAuth();
     const { memos, deletedMemos, refreshMemos } = useMemos();
     const [isSyncing, setIsSyncing] = useState(false);
     const [isInitialSyncDone, setIsInitialSyncDone] = useState(false);
@@ -61,10 +61,16 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
             if (fileId) {
                 const cloudData = await GoogleDriveService.downloadFile(tokenToUse, fileId);
+
+                // IMPORTANT: If cloudData is empty or malformed, skip merging to prevent data loss
+                if (!cloudData || !Array.isArray(cloudData.memos)) {
+                    console.error('SyncContext: Downloaded cloud data is invalid/missing memos array. Skipping merge.');
+                    throw new Error('Invalid cloud data format');
+                }
+
                 const cloudFileUpdatedAtStr = cloudData.updatedAt || new Date(0).toISOString();
 
                 // 1. ALWAYS PULL AND MERGE if cloud has changed since our last sync
-                // We use string comparison of updatedAt to be clock-drift-resilient
                 if (!lastSyncedCloudUpdatedAtRef.current || cloudFileUpdatedAtStr !== lastSyncedCloudUpdatedAtRef.current) {
                     const localMemos = await MemoRepo.getAllMemos();
                     const localDeletedMemos = await MemoRepo.getDeletedMemos();
@@ -74,28 +80,28 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
                     let hasLocalChanges = false;
 
-                    if (cloudData.memos) {
-                        for (const cloudMemo of cloudData.memos) {
-                            const localMemo = allLocalMemos.find(m => m.id === cloudMemo.id);
-                            const cloudUpdated = new Date(cloudMemo.updatedAt).getTime();
-                            const localUpdated = localMemo ? new Date(localMemo.updatedAt).getTime() : 0;
+                    for (const cloudMemo of cloudData.memos) {
+                        const localMemo = allLocalMemos.find(m => m.id === cloudMemo.id);
+                        const cloudUpdated = new Date(cloudMemo.updatedAt).getTime();
+                        const localUpdated = localMemo ? new Date(localMemo.updatedAt).getTime() : 0;
 
-                            if (!localMemo || cloudUpdated > localUpdated) {
-                                console.log(`SyncContext: Updating local memo ${cloudMemo.id} from cloud.`);
-                                await MemoRepo.upsertMemo(cloudMemo);
-                                if (cloudMemo.triggers) {
-                                    for (const t of cloudMemo.triggers) await TriggerRepo.upsertTrigger(t);
-                                }
-                                hasLocalChanges = true;
+                        if (!localMemo || cloudUpdated > localUpdated) {
+                            console.log(`SyncContext: Updating local memo ${cloudMemo.id} from cloud.`);
+                            await MemoRepo.upsertMemo(cloudMemo);
+                            if (cloudMemo.triggers) {
+                                for (const t of cloudMemo.triggers) await TriggerRepo.upsertTrigger(t);
                             }
+                            hasLocalChanges = true;
                         }
                     }
 
                     // 2. DETECT DELETIONS (Sync-Delete)
-                    if (mode === 'pull') {
+                    // Only run this if we are intentionally pulling OR doing a push-merge
+                    // Safety check: only delete if the cloud data we just got is valid
+                    if (mode === 'pull' && Array.isArray(cloudData.memos)) {
                         const localLastSyncTime = lastSyncedAtRef.current ? lastSyncedAtRef.current.getTime() : 0;
                         for (const local of allLocalMemos) {
-                            const existsInCloud = cloudData.memos?.some((m: any) => m.id === local.id);
+                            const existsInCloud = cloudData.memos.some((m: any) => m.id === local.id);
                             if (!existsInCloud) {
                                 // Delete if local hasn't been updated since our last sync
                                 if (new Date(local.updatedAt).getTime() <= localLastSyncTime) {
@@ -120,21 +126,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                     const finalDeleted = await MemoRepo.getDeletedMemos();
 
                     // Clock Drift Compensation: 
-                    // ensure file updatedAt is at least 1ms newer than what we just pulled
                     const cloudTime = new Date(cloudFileUpdatedAtStr).getTime();
                     const localNow = Date.now();
                     const correctedTime = Math.max(localNow, cloudTime + 1);
                     const correctedIso = new Date(correctedTime).toISOString();
 
                     const dataToUpload = {
-                        memos: [...finalMemos, ...finalDeleted].map(m => {
-                            // Also ensure memo updatedAt is boosted if needed to be "latest"
-                            if (new Date(m.updatedAt).getTime() < correctedTime && m.updatedAt.includes('Z')) {
-                                // We only boost if it's very close to prevent massive forward-drift
-                                // But simply setting it to correctedIso is safest for "I am the latest"
-                            }
-                            return m;
-                        }),
+                        memos: [...finalMemos, ...finalDeleted],
                         version: 1,
                         updatedAt: correctedIso
                     };
@@ -167,14 +165,20 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                 isInitialSyncDoneRef.current = true;
                 setIsInitialSyncDone(true);
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('SyncContext: Sync error:', error);
+
+            // Handle 401 Unauthorized (likely token expired)
+            if (error.message?.includes('401') && Platform.OS === 'web') {
+                console.log('SyncContext: 401 Error detected on Web. Clearing tokens.');
+                clearAccessToken();
+            }
         } finally {
             isSyncingRef.current = false;
             setIsSyncing(false);
             console.log(`SyncContext: performSync(${mode}) finished.`);
         }
-    }, [accessToken, getFreshToken, refreshMemos]);
+    }, [accessToken, getFreshToken, clearAccessToken, refreshMemos]);
 
     // Initial Sync
     useEffect(() => {
@@ -187,16 +191,15 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         }
     }, [accessToken, performSync]);
 
-    // Auto-save (Push) when memos change
     useEffect(() => {
         // Only trigger auto-save if accessToken is available and initial sync is done
         if (!accessToken || !isInitialSyncDoneRef.current) return;
 
-        console.log(`SyncContext: Memos changed (${memos.length}), scheduling auto-save push in 5s...`);
+        console.log(`SyncContext: Memos changed (${memos.length}), scheduling auto-save push in 2s...`);
         const timer = setTimeout(() => {
             console.log('SyncContext: Debounced auto-save push executing.');
             performSync('push');
-        }, 5000); // 5 seconds debounce
+        }, 2000); // 2 seconds debounce
 
         return () => clearTimeout(timer);
     }, [memos, deletedMemos, accessToken, performSync]);

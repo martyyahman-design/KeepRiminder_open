@@ -18,6 +18,13 @@ export const GoogleDriveService = {
                 },
             }
         );
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`GoogleDriveService: findFile failed with status ${response.status}: ${errorText}`);
+            throw new Error(`GoogleDriveService.findFile failed: ${response.status}`);
+        }
+
         const data = await response.json();
         if (data.files && data.files.length > 0) {
             return data.files[0].id;
@@ -34,6 +41,13 @@ export const GoogleDriveService = {
                 Authorization: `Bearer ${accessToken}`,
             },
         });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`GoogleDriveService: downloadFile failed with status ${response.status}: ${errorText}`);
+            throw new Error(`GoogleDriveService.downloadFile failed: ${response.status}`);
+        }
+
         return response.json();
     },
 

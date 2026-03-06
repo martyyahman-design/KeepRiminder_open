@@ -21,6 +21,7 @@ interface AuthContextType {
     signIn: () => Promise<void>;
     signOut: () => Promise<void>;
     getFreshToken: () => Promise<string | null>;
+    clearAccessToken: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -202,8 +203,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     };
 
+    const clearAccessToken = useCallback(() => {
+        setAccessToken(null);
+        if (Platform.OS === 'web') {
+            localStorage.removeItem(ACCESS_TOKEN_KEY);
+        }
+    }, []);
+
     return (
-        <AuthContext.Provider value={{ user, loading, accessToken, signIn, signOut, getFreshToken }}>
+        <AuthContext.Provider value={{ user, loading, accessToken, signIn, signOut, getFreshToken, clearAccessToken }}>
             {children}
         </AuthContext.Provider>
     );
