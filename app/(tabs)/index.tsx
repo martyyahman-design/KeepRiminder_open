@@ -27,6 +27,7 @@ import { MemoWithTriggers, MEMO_COLORS, MemoColor } from '../../src/types/models
 import { CountdownText } from '../../src/components/CountdownText';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useSync } from '../../src/contexts/SyncContext';
+import { useNetwork } from '../../src/contexts/NetworkContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_MARGIN = Spacing.sm;
@@ -36,6 +37,7 @@ export default function MemoListScreen() {
     const { memos, loading, createMemo, updateMemo, deleteMemo, refreshMemos } = useMemos();
     const { user, signIn, signOut, loading: authLoading } = useAuth();
     const { isSyncing, lastSyncedAt, performSync } = useSync();
+    const { isOnline } = useNetwork();
     const colors = useThemeColors();
     const colorScheme = useColorScheme();
     const insets = useSafeAreaInsets();
@@ -134,6 +136,10 @@ export default function MemoListScreen() {
     }, [refreshMemos, performSync, user]);
 
     const handleCreateMemo = async () => {
+        if (!isOnline) {
+            Alert.alert('オフライン', 'オフライン時は新規メモを作成できません。');
+            return;
+        }
         const memo = await createMemo();
         router.push(`/memo/${memo.id}`);
     };
@@ -144,6 +150,10 @@ export default function MemoListScreen() {
     };
 
     const handleToggleTodo = async (item: MemoWithTriggers) => {
+        if (!isOnline) {
+            Alert.alert('オフライン', 'オフライン時は状態を変更できません。');
+            return;
+        }
         const isCompleted = !item.isCompleted;
         const completedAt = isCompleted ? new Date().toISOString() : null;
         await updateMemo(item.id, { isCompleted, completedAt });
@@ -223,9 +233,7 @@ export default function MemoListScreen() {
                             <Pressable
                                 onPress={(e: GestureResponderEvent) => {
                                     e.stopPropagation();
-                                    const isCompleted = !item.isCompleted;
-                                    const completedAt = isCompleted ? new Date().toISOString() : null;
-                                    updateMemo(item.id, { isCompleted, completedAt });
+                                    handleToggleTodo(item);
                                 }}
                                 style={styles.checkbox}
                                 hitSlop={8}
@@ -451,6 +459,18 @@ export default function MemoListScreen() {
                 )
             }
 
+            {/* Offline Notice */}
+            {
+                !isOnline && (
+                    <View style={[styles.webNotice, { backgroundColor: colors.warning + '20' }]}>
+                        <Ionicons name="cloud-offline-outline" size={12} color={colors.warning} />
+                        <Text style={[styles.webNoticeText, { color: colors.warning }]}>
+                            オフラインモード (参照専用)
+                        </Text>
+                    </View>
+                )
+            }
+
             {/* Account Info Modal */}
             <Modal
                 visible={isAccountMenuVisible}
@@ -530,8 +550,8 @@ export default function MemoListScreen() {
                         <Text style={[styles.selectionCount, { color: colors.text }]}>{selectedIds.size}件選択中</Text>
                         <TouchableOpacity
                             onPress={handleBulkDelete}
-                            disabled={selectedIds.size === 0}
-                            style={[styles.selectionBarBtn, { opacity: selectedIds.size === 0 ? 0.4 : 1 }]}
+                            disabled={selectedIds.size === 0 || !isOnline}
+                            style={[styles.selectionBarBtn, { opacity: (selectedIds.size === 0 || !isOnline) ? 0.4 : 1 }]}
                         >
                             <Ionicons name="trash-outline" size={22} color={colors.error} />
                         </TouchableOpacity>
@@ -655,11 +675,12 @@ export default function MemoListScreen() {
 
             {/* FAB */}
             <TouchableOpacity
-                style={[styles.fab, { backgroundColor: colors.fab, ...getCardShadow(colors) }]}
+                style={[styles.fab, { backgroundColor: isOnline ? colors.fab : colors.textTertiary, ...getCardShadow(colors) }]}
                 onPress={handleCreateMemo}
-                activeOpacity={0.8}
+                activeOpacity={isOnline ? 0.8 : 1}
+                disabled={!isOnline}
             >
-                <Ionicons name="add" size={28} color={colors.fabText} />
+                <Ionicons name={isOnline ? "add" : "cloud-offline"} size={28} color={colors.fabText} />
             </TouchableOpacity>
         </View >
     );

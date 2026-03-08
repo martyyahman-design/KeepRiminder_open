@@ -74,19 +74,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 try {
                     const hasLoggedIn = await AsyncStorage.getItem(HAS_LOGGED_IN_KEY);
                     if (hasLoggedIn === 'true' || await GoogleSignin.hasPreviousSignIn()) {
-                        const userInfo = await GoogleSignin.signInSilently();
-                        const tokens = await GoogleSignin.getTokens();
-                        setAccessToken(tokens.accessToken);
-                        setUser({
-                            id: userInfo.data?.user.id ?? '',
-                            email: userInfo.data?.user.email ?? '',
-                            name: userInfo.data?.user.name ?? undefined,
-                            photo: userInfo.data?.user.photo ?? undefined,
-                        });
-                        await AsyncStorage.setItem(HAS_LOGGED_IN_KEY, 'true');
+                        try {
+                            const userInfo = await GoogleSignin.signInSilently();
+                            const tokens = await GoogleSignin.getTokens();
+                            setAccessToken(tokens.accessToken);
+                            setUser({
+                                id: userInfo.data?.user.id ?? '',
+                                email: userInfo.data?.user.email ?? '',
+                                name: userInfo.data?.user.name ?? undefined,
+                                photo: userInfo.data?.user.photo ?? undefined,
+                            });
+                            await AsyncStorage.setItem(HAS_LOGGED_IN_KEY, 'true');
+                        } catch (signInError) {
+                            console.log('AuthContext: Silent sign-in failed, checking offline fallback:', signInError);
+                            const offlineUser = GoogleSignin.getCurrentUser();
+                            if (offlineUser && offlineUser.user) {
+                                console.log('AuthContext: Restored user from offline data.');
+                                setUser({
+                                    id: offlineUser.user.id ?? '',
+                                    email: offlineUser.user.email ?? '',
+                                    name: offlineUser.user.name ?? undefined,
+                                    photo: offlineUser.user.photo ?? undefined,
+                                });
+                            } else {
+                                console.log('AuthContext: No offline user available either.');
+                            }
+                        }
                     }
                 } catch (error) {
-                    console.log('AuthContext: Silent sign-in failed:', error);
+                    console.log('AuthContext: Initialization error:', error);
                 } finally {
                     setLoading(false);
                 }

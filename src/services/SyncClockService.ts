@@ -10,14 +10,22 @@ const MAX_SEE_CLOUD_TIME_KEY = '@KeepReminder:max_seen_cloud_time';
 export class SyncClockService {
     private static maxSeenCloudTime: number = 0;
     private static isLoaded: boolean = false;
+    private static loadPromise: Promise<void> | null = null;
 
     private static async load() {
         if (this.isLoaded) return;
-        const stored = await AsyncStorage.getItem(MAX_SEE_CLOUD_TIME_KEY);
-        if (stored) {
-            this.maxSeenCloudTime = parseInt(stored, 10);
-        }
-        this.isLoaded = true;
+        if (this.loadPromise) return this.loadPromise;
+
+        this.loadPromise = (async () => {
+            const stored = await AsyncStorage.getItem(MAX_SEE_CLOUD_TIME_KEY);
+            if (stored) {
+                this.maxSeenCloudTime = parseInt(stored, 10);
+            }
+            this.isLoaded = true;
+            this.loadPromise = null;
+        })();
+
+        return this.loadPromise;
     }
 
     /**

@@ -5,6 +5,7 @@ import { useColorScheme, AppState, Alert, NativeModules, Platform, LogBox } from
 import { MemoProvider } from '../src/contexts/MemoContext';
 import { AuthProvider } from '../src/contexts/AuthContext';
 import { SyncProvider } from '../src/contexts/SyncContext';
+import { NetworkProvider } from '../src/contexts/NetworkContext';
 import * as Notifications from 'expo-notifications';
 import { requestNotificationPermissions } from '../src/services/notificationService';
 import { requestLocationPermissions, syncGeofences } from '../src/services/geofencingService';
@@ -38,13 +39,15 @@ function SyncIndicator() {
 
 export default function RootLayout() {
     return (
-        <AuthProvider>
-            <MemoProvider>
-                <SyncProvider>
-                    <RootLayoutContent />
-                </SyncProvider>
-            </MemoProvider>
-        </AuthProvider>
+        <NetworkProvider>
+            <AuthProvider>
+                <MemoProvider>
+                    <SyncProvider>
+                        <RootLayoutContent />
+                    </SyncProvider>
+                </MemoProvider>
+            </AuthProvider>
+        </NetworkProvider>
     );
 }
 
@@ -229,14 +232,24 @@ function RootLayoutContent() {
     // Keep splash screen visible until initialization completes AND the first render happens
     useEffect(() => {
         if (isAppReady && !authLoading && !hasPendingAlarm) {
-            setTimeout(() => {
-                SplashScreen.hideAsync().catch(console.warn);
-            }, 100);
+            const hideSplash = async () => {
+                try {
+                    await SplashScreen.hideAsync();
+                } catch (e) {
+                    console.warn('Failed to hide splash screen', e);
+                }
+            };
+            setTimeout(hideSplash, 100);
         }
     }, [isAppReady, authLoading, hasPendingAlarm]);
 
-    if (!isAppReady || authLoading) {
-        return null;
+    if (!isAppReady) {
+        return (
+            <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={{ color: colors.text, marginTop: 10 }}>アプリを初期化中...</Text>
+            </View>
+        );
     }
 
     return (
@@ -298,5 +311,10 @@ const styles = StyleSheet.create({
     },
     syncText: {
         display: 'none',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 });

@@ -1,16 +1,19 @@
 import React, { createContext, useContext, useEffect, useCallback, useState, useRef, ReactNode } from 'react';
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
 import { useMemos } from './MemoContext';
 import { GoogleDriveService } from '../services/GoogleDriveService';
-import { TombstoneService } from '../services/TombstoneService';
+import { TombstoneService, TombstoneInfo } from '../services/TombstoneService';
 import { SyncClockService } from '../services/SyncClockService';
+import { useNetwork } from './NetworkContext';
 import * as MemoRepo from '../database/repositories/memoRepository';
 import * as TriggerRepo from '../database/repositories/triggerRepository';
+import { Alert } from 'react-native';
 
 const LAST_SYNCED_AT_KEY = '@KeepReminder:last_synced_at';
 const LAST_CLOUD_UPDATED_AT_KEY = '@KeepReminder:last_cloud_updated_at';
+const LAST_ETAG_KEY = '@KeepReminder:last_etag';
 
 interface SyncContextType {
     isSyncing: boolean;
@@ -21,30 +24,36 @@ interface SyncContextType {
 
 const SyncContext = createContext<SyncContextType | undefined>(undefined);
 
-const DB_FILE_NAME = 'keepreminder_backup.json';
+const DB_FILE_NAME = 'keepreminder_backup_v2.json';
 
 export function SyncProvider({ children }: { children: ReactNode }) {
-    const { accessToken, getFreshToken, clearAccessToken } = useAuth();
+    const { user, accessToken, getFreshToken, clearAccessToken } = useAuth();
     const { memos, deletedMemos, refreshMemos } = useMemos();
     const [isSyncing, setIsSyncing] = useState(false);
     const [isInitialSyncDone, setIsInitialSyncDone] = useState(false);
     const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
     const [lastSyncedCloudUpdatedAt, setLastSyncedCloudUpdatedAt] = useState<string | null>(null);
+    const [lastEtag, setLastEtag] = useState<string | null>(null);
     const [isStateLoaded, setIsStateLoaded] = useState(false);
+    const prevMemosCount = useRef(memos.length);
+    const prevDeletedCount = useRef(deletedMemos.length);
 
     const lastSyncedAtRef = useRef<Date | null>(null);
     const lastSyncedCloudUpdatedAtRef = useRef<string | null>(null);
+    const lastEtagRef = useRef<string | null>(null);
     const isSyncingRef = useRef(false);
     const isInitialSyncDoneRef = useRef(false);
+    const pendingPushRef = useRef(false);
+    const { isOnline } = useNetwork();
 
-    // Persistence: Load sync state on mount
     // Persistence: Load sync state on mount
     useEffect(() => {
         const loadSyncState = async () => {
             try {
-                const [storedAt, storedCloud] = await Promise.all([
+                const [storedAt, storedCloud, storedEtag] = await Promise.all([
                     AsyncStorage.getItem(LAST_SYNCED_AT_KEY),
                     AsyncStorage.getItem(LAST_CLOUD_UPDATED_AT_KEY),
+                    AsyncStorage.getItem(LAST_ETAG_KEY),
                 ]);
 
                 if (storedAt) {
@@ -55,6 +64,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                 if (storedCloud) {
                     setLastSyncedCloudUpdatedAt(storedCloud);
                     lastSyncedCloudUpdatedAtRef.current = storedCloud;
+                }
+                if (storedEtag) {
+                    setLastEtag(storedEtag);
+                    lastEtagRef.current = storedEtag;
                 }
 
                 console.log('SyncContext: Persistent sync state loaded', { storedAt, storedCloud });
@@ -74,7 +87,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         }
 
         if (isSyncingRef.current) {
-            console.log(`SyncContext: performSync(${mode}) skipped, already syncing.`);
+            console.log(`SyncContext: performSync(${mode}) deferred - already syncing.`);
+            if (mode === 'push') pendingPushRef.current = true;
+            return;
+        }
+
+        if (!isOnline) {
+            console.log(`SyncContext: performSync(${mode}) skipped, network offline.`);
             return;
         }
 
@@ -100,152 +119,174 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
         console.log(`SyncContext: performSync(${mode}) started. isInitialSyncDone: ${isInitialSyncDoneRef.current}`);
         try {
-            const fileId = await GoogleDriveService.findFile(tokenToUse, DB_FILE_NAME);
+            const fileInfo = await GoogleDriveService.findFile(tokenToUse, DB_FILE_NAME);
 
-            if (fileId) {
-                const cloudData = await GoogleDriveService.downloadFile(tokenToUse, fileId);
+            if (fileInfo) {
+                const fileId = fileInfo.id;
+                let cloudEtag = fileInfo.etag;
 
-                // IMPORTANT: If cloudData is empty or malformed, skip merging to prevent data loss
-                if (!cloudData || !Array.isArray(cloudData.memos)) {
-                    console.error('SyncContext: Downloaded cloud data is invalid/missing memos array. Skipping merge.');
-                    throw new Error('Invalid cloud data format');
+                // 1. PUSH 競合チェック (Optimistic Locking)
+                if (mode === 'push') {
+                    if (lastEtagRef.current && cloudEtag !== lastEtagRef.current) {
+                        console.warn(`SyncContext: 競合を検知しました (Cloud Etag: ${cloudEtag}, Local Etag: ${lastEtagRef.current})。PULLを強制します。`);
+                        if (Platform.OS !== 'web') {
+                            Alert.alert('同期エラー', '他のデバイスで更新が行われたため、最新データを取得します。現在の編集内容を反映するため、もう一度保存/同期を行ってください。');
+                        } else {
+                            window.alert('他のデバイスで更新が行われたため、最新データを取得します。現在の編集内容を反映するため、もう一度保存/同期を行ってください。');
+                        }
+                        mode = 'pull'; // 強制PULLに切り替え
+                    }
                 }
 
-                const cloudFileUpdatedAtStr = cloudData.updatedAt || new Date(0).toISOString();
+                // クラウドの更新がある場合 (ETag が異なる) 常に PULL ＆ MERGE
+                if (!lastEtagRef.current || cloudEtag !== lastEtagRef.current || mode === 'pull') {
+                    const cloudData = await GoogleDriveService.downloadFile(tokenToUse, fileId);
 
-                // Keep track of the latest cloud time to handle drift
-                await SyncClockService.updateMaxSeenCloudTime(cloudFileUpdatedAtStr);
+                    if (!cloudData || !Array.isArray(cloudData.memos)) {
+                        console.error('SyncContext: Downloaded cloud data is invalid/missing memos array. Skipping merge.');
+                        throw new Error('Invalid cloud data format');
+                    }
 
-                // 1. ALWAYS PULL AND MERGE if cloud has changed since our last sync
-                if (!lastSyncedCloudUpdatedAtRef.current || cloudFileUpdatedAtStr !== lastSyncedCloudUpdatedAtRef.current) {
+                    const cloudFileUpdatedAtStr = cloudData.updatedAt || new Date(0).toISOString();
+                    await SyncClockService.updateMaxSeenCloudTime(cloudFileUpdatedAtStr);
+
+                    // ローカルデータを取得
                     const localMemos = await MemoRepo.getAllMemos();
                     const localDeletedMemos = await MemoRepo.getDeletedMemos();
                     const allLocalMemos = [...localMemos, ...localDeletedMemos];
+                    const dirtyMemosMap = new Map((await MemoRepo.getDirtyMemos()).map(m => [m.id, true]));
 
-                    // MERGE TOMBSTONES
-                    const cloudTombstones: Record<string, string> = cloudData.tombstones || {};
+                    // 墓石マージ
+                    const cloudTombstones: Record<string, TombstoneInfo> = cloudData.tombstones || {};
                     await TombstoneService.mergeTombstones(cloudTombstones);
                     const currentTombstones = await TombstoneService.getTombstones();
 
-                    console.log(`SyncContext: Cloud changed (Cloud: ${cloudFileUpdatedAtStr}, Last Local Sync: ${lastSyncedCloudUpdatedAtRef.current}). Merging...`);
-
+                    console.log(`SyncContext: Merging Data. Cloud ETag: ${cloudEtag}`);
                     let hasLocalChanges = false;
+                    let conflictNotified = false;
 
-                    // A. Process Cloud Memos
-                    for (const cloudMemo of cloudData.memos) {
+                    // A. Cloud メモ処理 (有効なメモとごみ箱の両方をソースにする)
+                    const cloudMemosToProcess = [...cloudData.memos, ...(cloudData.deletedMemos || [])];
+                    console.log(`SyncContext: Processing ${cloudMemosToProcess.length} cloud memos (including trash)`);
+
+                    for (const cloudMemo of cloudMemosToProcess) {
                         const localMemo = allLocalMemos.find(m => m.id === cloudMemo.id);
-                        const cloudUpdated = new Date(cloudMemo.updatedAt).getTime();
-                        const localUpdated = localMemo ? new Date(localMemo.updatedAt).getTime() : 0;
-                        const tombstoneAt = currentTombstones[cloudMemo.id];
+                        const tombstone = currentTombstones[cloudMemo.id];
 
-                        // 1. TOMBSTONE GUARD: Skip if this memo is marked as deleted AND tombstone is newer or equal to cloud version
-                        if (tombstoneAt && new Date(tombstoneAt).getTime() >= cloudUpdated) {
-                            console.log(`SyncContext: [SKIP] Cloud memo ${cloudMemo.id} - tombstone exists and is newer (${tombstoneAt} >= ${cloudMemo.updatedAt})`);
+                        // 墓石チェック (クラウドよりローカルの墓石が新しければ無視)
+                        if (tombstone && tombstone.version >= cloudMemo.version) {
                             continue;
                         }
 
-                        // 2. NEW OR UPDATED?
                         if (!localMemo) {
-                            // It's not in local AND not in tombstone (checked above) -> It's a truly new memo from another device
-                            console.log(`SyncContext: [CREATE] New memo ${cloudMemo.id} from cloud (Title: ${cloudMemo.title || 'Untitled'}).`);
+                            // 新規作成
+                            console.log(`SyncContext: PULL - Creating new memo ${cloudMemo.id} (isDeleted: ${cloudMemo.isDeleted})`);
                             await MemoRepo.upsertMemo(cloudMemo);
-                            if (cloudMemo.triggers) {
-                                for (const t of cloudMemo.triggers) await TriggerRepo.upsertTrigger(t);
-                            }
-                            hasLocalChanges = true;
-                        } else if (cloudUpdated > localUpdated) {
-                            // It exists locally, but cloud is newer
-                            console.log(`SyncContext: [UPDATE] Existing local memo ${cloudMemo.id} from cloud (Cloud: ${cloudMemo.updatedAt}, Local: ${localMemo.updatedAt}).`);
-                            await MemoRepo.upsertMemo(cloudMemo);
-                            if (cloudMemo.triggers) {
-                                for (const t of cloudMemo.triggers) await TriggerRepo.upsertTrigger(t);
-                            }
                             hasLocalChanges = true;
                         } else {
-                            console.log(`SyncContext: [NO-OP] Cloud memo ${cloudMemo.id} is not newer (Cloud: ${cloudMemo.updatedAt}, Local: ${localMemo.updatedAt}).`);
+                            const cloudVersion = Number(cloudMemo.version) || 0;
+                            const localVersion = Number(localMemo.version) || 0;
+
+                            // 競合保護 (Duplicate & Keep Both 戦略)
+                            if (dirtyMemosMap.has(localMemo.id) && cloudVersion > localVersion) {
+                                console.log(`SyncContext: PULL - Conflict detected on memo ${localMemo.id}. Duplicating local changes.`);
+                                await MemoRepo.duplicateMemo(localMemo);
+
+                                if (!conflictNotified) {
+                                    const msg = '他のデバイスと同時に編集された競合を検知したため、あなたの変更を別のメモとして保護しました。';
+                                    if (Platform.OS !== 'web') Alert.alert('同期保護', msg);
+                                    else window.alert(msg);
+                                    conflictNotified = true;
+                                }
+                            }
+
+                            if (cloudVersion > localVersion || (cloudMemo.isDeleted && !localMemo.isDeleted)) {
+                                // Cloud が新しい、または Cloud で削除されているのにローカルで削除されていない
+                                console.log(`SyncContext: PULL - Updating memo ${cloudMemo.id} to version ${cloudVersion} (isDeleted: ${cloudMemo.isDeleted})`);
+                                await MemoRepo.upsertMemo(cloudMemo);
+                                hasLocalChanges = true;
+                            }
                         }
                     }
 
-                    // B. Process Tombstones against Local
-                    for (const [id, deletedAt] of Object.entries(currentTombstones)) {
+                    // B. 墓石処理 (クラウドから消されたものをローカルからも消す)
+                    for (const [id, tombstoneInfo] of Object.entries(currentTombstones)) {
                         const local = allLocalMemos.find(m => m.id === id);
-                        if (local && new Date(deletedAt).getTime() > new Date(local.updatedAt).getTime()) {
-                            console.log(`SyncContext: [DELETE] Local ${id} - found in tombstones (${deletedAt} > ${local.updatedAt})`);
+                        if (local && tombstoneInfo.version >= local.version) {
                             await MemoRepo.permanentlyDeleteMemo(id);
                             hasLocalChanges = true;
                         }
                     }
 
-                    // C. Cleanup logic (Optional: detect items removed from cloud WITHOUT tombstones - e.g. manual file edit)
-                    // If mode is 'pull', we could theoretically clean up things not in cloud AND not in tombstones,
-                    // but we must be careful. For now, let's rely strictly on tombstones for explicit deletions.
-                    // Legacy cleaning is removed to prevent accidental data loss.
-
                     if (hasLocalChanges) {
                         await refreshMemos();
+                        // 画面に通知 (手動Pullの場合のみ)
+                        if (Platform.OS !== 'web' && mode === 'pull') {
+                            Alert.alert('同期', 'クラウドから新しい変更を受信しました');
+                        }
+                    } else if (Platform.OS !== 'web' && mode === 'pull') {
+                        Alert.alert('同期', 'サーバー上のデータは最新でした');
                     }
+
+                    // 成功した ETag 等の保存
+                    setLastEtag(cloudEtag);
+                    lastEtagRef.current = cloudEtag;
                     setLastSyncedCloudUpdatedAt(cloudFileUpdatedAtStr);
                     lastSyncedCloudUpdatedAtRef.current = cloudFileUpdatedAtStr;
+
+                    await AsyncStorage.setItem(LAST_ETAG_KEY, cloudEtag);
                     await AsyncStorage.setItem(LAST_CLOUD_UPDATED_AT_KEY, cloudFileUpdatedAtStr);
                 }
 
-                // 3. PUSH back if requested
+                // PUSH 要求があれば最新データをアップロード
                 if (mode === 'push') {
-                    // Cleanup old tombstones
                     await TombstoneService.cleanupTombstones();
                     const currentTombstones = await TombstoneService.getTombstones();
 
                     let finalMemos = await MemoRepo.getAllMemos();
                     let finalDeleted = await MemoRepo.getDeletedMemos();
-                    let allFinal = [...finalMemos, ...finalDeleted];
-                    let hasTimestampAdjustments = false;
-
-                    // AUTO-BUMP: If local is logically different from cloud BUT timestamp is trailing, fix it
-                    for (const m of allFinal) {
-                        const cloudM = cloudData.memos.find((cm: any) => cm.id === m.id);
-                        if (cloudM) {
-                            const cloudUT = new Date(cloudM.updatedAt).getTime();
-                            const localUT = new Date(m.updatedAt).getTime();
-
-                            // Check for logical difference (simplified check: title, content, blocks count, deletedAt)
-                            const isDifferent = m.title !== cloudM.title ||
-                                m.content !== cloudM.content ||
-                                m.deletedAt !== cloudM.deletedAt ||
-                                (m.blocks?.length !== cloudM.blocks?.length);
-
-                            if (isDifferent && localUT <= cloudUT) {
-                                console.log(`SyncContext: [BUMP] Local memo ${m.id} trails cloud (${m.updatedAt} <= ${cloudM.updatedAt}). Up-dating to safe time.`);
-                                const safeNow = await SyncClockService.getSafeNow();
-                                m.updatedAt = safeNow;
-                                if (m.deletedAt) m.deletedAt = safeNow; // If it was a trash move, bump that too
-                                await MemoRepo.upsertMemo(m);
-                                hasTimestampAdjustments = true;
-                            }
-                        }
-                    }
-
-                    if (hasTimestampAdjustments) {
-                        await refreshMemos();
-                    }
-
-                    // Clock Drift Compensation for the file itself: 
-                    const safeNowForFile = await SyncClockService.getSafeNow();
 
                     const dataToUpload = {
                         version: 2,
                         memos: [...finalMemos, ...finalDeleted],
                         tombstones: currentTombstones,
-                        updatedAt: safeNowForFile
+                        updatedAt: new Date().toISOString()
                     };
 
-                    console.log(`SyncContext: Pushing data to cloud... (Memos: ${dataToUpload.memos.length}, Tombstones: ${Object.keys(dataToUpload.tombstones).length})`);
-                    await GoogleDriveService.uploadFile(tokenToUse, DB_FILE_NAME, dataToUpload, fileId);
-                    setLastSyncedCloudUpdatedAt(safeNowForFile);
-                    lastSyncedCloudUpdatedAtRef.current = safeNowForFile;
-                    await AsyncStorage.setItem(LAST_CLOUD_UPDATED_AT_KEY, safeNowForFile);
+                    console.log(`SyncContext: Pushing data to cloud... (Active: ${finalMemos.length}, Deleted: ${finalDeleted.length}, Tombstones: ${Object.keys(dataToUpload.tombstones).length}) ETag:${lastEtagRef.current}`);
+                    if (finalDeleted.length > 0) {
+                        console.log('SyncContext: Deleted items in PUSH:', finalDeleted.map(m => `${m.id} (isDeleted: ${m.isDeleted})`));
+                    }
+
+                    // IF-Match を使ってアップロード
+                    const result = await GoogleDriveService.uploadFile(tokenToUse, DB_FILE_NAME, dataToUpload, fileId, lastEtagRef.current || undefined);
+
+                    if (result.etag) {
+                        setLastEtag(result.etag);
+                        lastEtagRef.current = result.etag;
+                        await AsyncStorage.setItem(LAST_ETAG_KEY, result.etag);
+                        console.log(`SyncContext: PUSH successful. New ETag: ${result.etag}`);
+                    }
+
+                    setLastSyncedCloudUpdatedAt(dataToUpload.updatedAt);
+                    lastSyncedCloudUpdatedAtRef.current = dataToUpload.updatedAt;
+                    await AsyncStorage.setItem(LAST_CLOUD_UPDATED_AT_KEY, dataToUpload.updatedAt);
+
+                    // PUSH成功後、全データの lastSyncedVersion を version に更新
+                    for (const memo of finalMemos) {
+                        if (memo.version > memo.lastSyncedVersion) {
+                            await MemoRepo.markAsSynced(memo.id, memo.version);
+                        }
+                    }
+                    for (const memo of finalDeleted) {
+                        if (memo.version > memo.lastSyncedVersion) {
+                            await MemoRepo.markAsSynced(memo.id, memo.version);
+                        }
+                    }
                 }
+
             } else if (mode === 'push') {
-                // Initial creation in cloud
+                // 初回アップロード
                 const localMemos = await MemoRepo.getAllMemos();
                 const localDeleted = await MemoRepo.getDeletedMemos();
                 const now = new Date().toISOString();
@@ -256,10 +297,29 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                     tombstones: currentTombstones,
                     updatedAt: now
                 };
-                await GoogleDriveService.uploadFile(tokenToUse, DB_FILE_NAME, dataToUpload);
+                const result = await GoogleDriveService.uploadFile(tokenToUse, DB_FILE_NAME, dataToUpload);
+
+                // 初回アップロード後の同期状態更新
+                if (result.etag) {
+                    setLastEtag(result.etag);
+                    lastEtagRef.current = result.etag;
+                    await AsyncStorage.setItem(LAST_ETAG_KEY, result.etag);
+                    console.log(`SyncContext: Initial PUSH successful. New ETag: ${result.etag}`);
+                }
                 setLastSyncedCloudUpdatedAt(now);
                 lastSyncedCloudUpdatedAtRef.current = now;
                 await AsyncStorage.setItem(LAST_CLOUD_UPDATED_AT_KEY, now);
+
+                for (const memo of localMemos) {
+                    if (memo.version > memo.lastSyncedVersion) {
+                        await MemoRepo.markAsSynced(memo.id, memo.version);
+                    }
+                }
+                for (const memo of localDeleted) {
+                    if (memo.version > memo.lastSyncedVersion) {
+                        await MemoRepo.markAsSynced(memo.id, memo.version);
+                    }
+                }
                 console.log('SyncContext: Created initial DB file in cloud.');
             }
 
@@ -283,21 +343,37 @@ export function SyncProvider({ children }: { children: ReactNode }) {
             isSyncingRef.current = false;
             setIsSyncing(false);
             console.log(`SyncContext: performSync(${mode}) finished.`);
+
+            // If there's a pending push, execute it now
+            if (pendingPushRef.current) {
+                console.log('SyncContext: Executing deferred pending push.');
+                pendingPushRef.current = false;
+                performSync('push');
+            }
         }
     }, [accessToken, getFreshToken, clearAccessToken, refreshMemos, isStateLoaded]);
 
-    // Initial Sync
     useEffect(() => {
-        if (!isStateLoaded) return;
+        if (!isStateLoaded || !isOnline) return;
         if (accessToken && !isInitialSyncDoneRef.current) {
             console.log('SyncContext: Initial sync (first pull) triggered.');
             performSync('pull');
         }
-    }, [accessToken, performSync, isStateLoaded]);
+    }, [accessToken, performSync, isStateLoaded, isOnline]);
 
     useEffect(() => {
-        // Only trigger auto-save if accessToken is available and initial sync is done
-        if (!accessToken || !isInitialSyncDoneRef.current || !isStateLoaded) return;
+        // Only trigger auto-save if accessToken is available, online and initial sync is done
+        if (!accessToken || !isInitialSyncDoneRef.current || !isStateLoaded || !isOnline) return;
+
+        const isDeletion = memos.length < prevMemosCount.current || deletedMemos.length < prevDeletedCount.current;
+        prevMemosCount.current = memos.length;
+        prevDeletedCount.current = deletedMemos.length;
+
+        if (isDeletion) {
+            console.log('SyncContext: Deletion detected! Triggering IMMEDIATE push.');
+            performSync('push');
+            return;
+        }
 
         console.log(`SyncContext: State changed, scheduling auto-save push in 2s...`);
         const timer = setTimeout(() => {
@@ -306,7 +382,19 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         }, 2000); // 2 seconds debounce
 
         return () => clearTimeout(timer);
-    }, [memos, deletedMemos, accessToken, performSync, isStateLoaded]);
+    }, [memos, deletedMemos, accessToken, performSync, isStateLoaded, isOnline]);
+
+    // AppState listener for quick pull when returning to app
+    useEffect(() => {
+        if (Platform.OS === 'web') return;
+        const subscription = AppState.addEventListener('change', nextAppState => {
+            if (nextAppState === 'active' && user) {
+                console.log('SyncContext: App came to foreground, triggering PULL');
+                performSync('pull');
+            }
+        });
+        return () => subscription.remove();
+    }, [user, performSync]);
 
     // Background Polling
     useEffect(() => {

@@ -1,78 +1,76 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getDatabase } from '../database/db';
 import { SyncClockService } from './SyncClockService';
+import { Tombstone } from '../types/models';
 
-const LAST_TOMBSTONES_KEY = '@KeepReminder:last_tombstones';
+export type TombstoneInfo = Pick<Tombstone, 'deletedAt' | 'version'>;
 
 export class TombstoneService {
-    private static cache: Record<string, string> | null = null;
-
-    static async getTombstones(): Promise<Record<string, string>> {
-        if (this.cache) return this.cache;
-
+    static async getTombstones(): Promise<Record<string, TombstoneInfo>> {
         try {
-            const stored = await AsyncStorage.getItem(LAST_TOMBSTONES_KEY);
-            if (stored) {
-                this.cache = JSON.parse(stored);
-                return this.cache || {};
+            const db = await getDatabase();
+            const rows = await db.getAllAsync<Tombstone>('SELECT * FROM tombstones');
+            const result: Record<string, TombstoneInfo> = {};
+            for (const row of rows) {
+                result[row.id] = { deletedAt: row.deletedAt, version: row.version };
             }
+            return result;
         } catch (e) {
             console.error('TombstoneService: Failed to get tombstones', e);
-        }
-        this.cache = {};
-        return {};
-    }
-
-    static async addTombstone(id: string): Promise<void> {
-        const tombstones = { ...(await this.getTombstones()) };
-        const now = await SyncClockService.getSafeNow();
-
-        // Safety: only update if new or later than existing (though usually it's just added)
-        if (!tombstones[id] || new Date(now).getTime() > new Date(tombstones[id]).getTime()) {
-            tombstones[id] = now;
-            this.cache = tombstones;
-            await AsyncStorage.setItem(LAST_TOMBSTONES_KEY, JSON.stringify(tombstones));
-            console.log(`TombstoneService: Recorded tombstone for ${id} at ${now}`);
+            return {};
         }
     }
 
-    static async mergeTombstones(incoming: Record<string, string>): Promise<boolean> {
-        const local = { ...(await this.getTombstones()) };
-        let changed = false;
+    static async addTombstone(id: string, version: number): Promise<void> {
+        try {
+            const db = await getDatabase();
+            const now = await SyncClockService.getSafeNow();
+            const existing = await db.getFirstAsync<Tombstone>('SELECT * FROM tombstones WHERE id = ?', [id]);
 
-        for (const [id, incomingDeletedAt] of Object.entries(incoming)) {
-            const localDeletedAt = local[id];
-            if (!localDeletedAt || new Date(incomingDeletedAt).getTime() > new Date(localDeletedAt).getTime()) {
-                local[id] = incomingDeletedAt;
-                changed = true;
+            if (!existing || version >= existing.version) {
+                await db.runAsync('REPLACE INTO tombstones (id, version, deletedAt) VALUES (?, ?, ?)', [id, version, now]);
+                console.log(`TombstoneService: Recorded tombstone for ${id} (version ${version}) at ${now}`);
             }
+        } catch (e) {
+            console.error('TombstoneService: Failed to add tombstone', e);
         }
+    }
 
-        if (changed) {
-            this.cache = local;
-            await AsyncStorage.setItem(LAST_TOMBSTONES_KEY, JSON.stringify(local));
-            console.log('TombstoneService: Merged tombstones', Object.keys(local).length);
+    static async mergeTombstones(incoming: Record<string, TombstoneInfo>): Promise<boolean> {
+        try {
+            const db = await getDatabase();
+            const local = await this.getTombstones();
+            let changed = false;
+
+            for (const [id, incomingInfo] of Object.entries(incoming)) {
+                const localInfo = local[id];
+                if (!localInfo || incomingInfo.version > localInfo.version) {
+                    await db.runAsync('REPLACE INTO tombstones (id, version, deletedAt) VALUES (?, ?, ?)', [id, incomingInfo.version, incomingInfo.deletedAt]);
+                    changed = true;
+                } else if (incomingInfo.version === localInfo.version && new Date(incomingInfo.deletedAt).getTime() > new Date(localInfo.deletedAt).getTime()) {
+                    await db.runAsync('REPLACE INTO tombstones (id, version, deletedAt) VALUES (?, ?, ?)', [id, incomingInfo.version, incomingInfo.deletedAt]);
+                    changed = true;
+                }
+            }
+
+            if (changed) {
+                console.log('TombstoneService: Merged tombstones');
+            }
+            return changed;
+        } catch (e) {
+            console.error('TombstoneService: Failed to merge tombstones', e);
+            return false;
         }
-        return changed;
     }
 
     static async cleanupTombstones(): Promise<void> {
-        const tombstones = await this.getTombstones();
-        const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
-        const fresh: Record<string, string> = {};
-        let changed = false;
+        try {
+            const db = await getDatabase();
+            const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000)).toISOString();
 
-        for (const [id, date] of Object.entries(tombstones)) {
-            if (new Date(date).getTime() > thirtyDaysAgo) {
-                fresh[id] = date;
-            } else {
-                changed = true;
-            }
-        }
-
-        if (changed) {
-            this.cache = fresh;
-            await AsyncStorage.setItem(LAST_TOMBSTONES_KEY, JSON.stringify(fresh));
+            await db.runAsync('DELETE FROM tombstones WHERE deletedAt < ?', [thirtyDaysAgo]);
             console.log('TombstoneService: Cleaned up old tombstones');
+        } catch (e) {
+            console.error('TombstoneService: Failed to cleanup tombstones', e);
         }
     }
 }

@@ -24,6 +24,7 @@ import { formatDate } from '../../src/utils/dateUtils';
 import MapViewComponent from '../../src/components/MapViewComponent';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
+import { useNetwork } from '../../src/contexts/NetworkContext';
 import { CalendarDatePicker } from '../../src/components/CalendarDatePicker';
 import { CountdownText } from '../../src/components/CountdownText';
 import { ContentBlock } from '../../src/types/models';
@@ -34,6 +35,7 @@ import { registerGeofence, unregisterGeofence } from '../../src/services/geofenc
 export default function MemoEditScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const { memos, updateMemo, deleteMemo, deleteTrigger, updateTrigger } = useMemos();
+    const { isOnline } = useNetwork();
     const colors = useThemeColors();
     const colorScheme = useColorScheme();
 
@@ -79,9 +81,18 @@ export default function MemoEditScreen() {
         }
     }, [memo?.id]);
 
+    const isFirstMount = useRef(true);
+
     // Auto-save on change
     useEffect(() => {
         if (!id || isDeleting.current) return;
+
+        // Skip the very first auto-save trigger on mount to prevent unnecessary DB updates and sync loops
+        if (isFirstMount.current) {
+            isFirstMount.current = false;
+            return;
+        }
+
         const timer = setTimeout(() => {
             if (isDeleting.current) return;
             // Update redundant content field for search compatibility
@@ -93,6 +104,10 @@ export default function MemoEditScreen() {
 
     const handleTogglePin = async () => {
         if (!id || !memo) return;
+        if (!isOnline) {
+            Alert.alert('オフライン', 'オフライン時はピン留めの状態を変更できません。');
+            return;
+        }
         const newPinnedState = !memo.isPinned;
         await updateMemo(id, { isPinned: newPinnedState });
 
@@ -103,6 +118,10 @@ export default function MemoEditScreen() {
 
     const handleToggleTag = async () => {
         if (!id || !memo) return;
+        if (!isOnline) {
+            Alert.alert('オフライン', 'オフライン時はタグを変更できません。');
+            return;
+        }
         const newTag = memo.tag === 'work' ? 'private' : 'work';
         await updateMemo(id, { tag: newTag });
 
@@ -114,6 +133,11 @@ export default function MemoEditScreen() {
     const isDeleting = useRef(false);
 
     const handleDelete = async () => {
+        if (!isOnline) {
+            Alert.alert('オフライン', 'オフライン時は削除できません。');
+            return;
+        }
+
         const performDelete = async () => {
             if (id) {
                 isDeleting.current = true;
@@ -144,6 +168,10 @@ export default function MemoEditScreen() {
     };
 
     const handleDeleteTrigger = (triggerId: string) => {
+        if (!isOnline) {
+            Alert.alert('オフライン', 'オフライン時はトリガーを削除できません。');
+            return;
+        }
         const performDelete = () => deleteTrigger(triggerId);
 
         if (Platform.OS === 'web') {
@@ -168,6 +196,10 @@ export default function MemoEditScreen() {
     };
 
     const handleToggleTrigger = async (trigger: Trigger) => {
+        if (!isOnline) {
+            Alert.alert('オフライン', 'オフライン時はトリガーの状態を変更できません。');
+            return;
+        }
         const newIsActive = !trigger.isActive;
         let updates: any = { isActive: newIsActive };
 
@@ -413,14 +445,16 @@ export default function MemoEditScreen() {
                 </View>
 
                 <TouchableOpacity
-                    onPress={() => setShowColorPicker(!showColorPicker)}
-                    style={[styles.actionBtn, { backgroundColor: `${colors.text}10` }]}
+                    onPress={() => isOnline ? setShowColorPicker(!showColorPicker) : Alert.alert('オフライン', 'オフライン時は色を変更できません。')}
+                    style={[styles.actionBtn, { backgroundColor: `${colors.text}10`, opacity: isOnline ? 1 : 0.4 }]}
+                    disabled={!isOnline}
                 >
                     <Ionicons name="color-palette-outline" size={20} color={colors.textSecondary} />
                 </TouchableOpacity>
                 <TouchableOpacity
                     onPress={handleDelete}
-                    style={[styles.actionBtn, { backgroundColor: `${colors.error}10` }]}
+                    style={[styles.actionBtn, { backgroundColor: `${colors.error}10`, opacity: isOnline ? 1 : 0.4 }]}
+                    disabled={!isOnline}
                 >
                     <Ionicons name="trash-outline" size={20} color={colors.error} />
                 </TouchableOpacity>
@@ -488,6 +522,7 @@ export default function MemoEditScreen() {
                     placeholderTextColor={colorScheme === 'dark' ? '#6B7280' : '#9CA3AF'}
                     value={title}
                     onChangeText={setTitle}
+                    editable={isOnline}
                     multiline
                 />
 
@@ -541,30 +576,35 @@ export default function MemoEditScreen() {
                                         textAlignVertical="top"
                                         blurOnSubmit={false}
                                         selectionColor={colors.primary}
+                                        editable={isOnline}
                                     />
                                 </View>
                             ) : (
                                 <View style={styles.imageBlockContainer}>
                                     <Image source={{ uri: block.content }} style={styles.imageBlock} resizeMode="contain" />
-                                    <TouchableOpacity
-                                        style={styles.deleteBlockBtn}
-                                        onPress={() => handleDeleteBlock(block.id)}
-                                    >
-                                        <Ionicons name="close-circle" size={24} color={colors.error} />
-                                    </TouchableOpacity>
+                                    {isOnline && (
+                                        <TouchableOpacity
+                                            style={styles.deleteBlockBtn}
+                                            onPress={() => handleDeleteBlock(block.id)}
+                                        >
+                                            <Ionicons name="close-circle" size={24} color={colors.error} />
+                                        </TouchableOpacity>
+                                    )}
                                 </View>
                             )}
                         </View>
                     ))}
                 </View>
 
-                <TouchableOpacity
-                    style={[styles.addImageBtn, { borderColor: colors.primary + '20' }]}
-                    onPress={() => handleAddImage()}
-                >
-                    <Ionicons name="image-outline" size={20} color={colors.primary} />
-                    <Text style={[styles.addImageText, { color: colors.primary }]}>画像を挿入</Text>
-                </TouchableOpacity>
+                {isOnline && (
+                    <TouchableOpacity
+                        style={[styles.addImageBtn, { borderColor: colors.primary + '20' }]}
+                        onPress={() => handleAddImage()}
+                    >
+                        <Ionicons name="image-outline" size={20} color={colors.primary} />
+                        <Text style={[styles.addImageText, { color: colors.primary }]}>画像を挿入</Text>
+                    </TouchableOpacity>
+                )}
 
                 {/* TODO Settings */}
                 <View style={styles.todoSection}>
@@ -577,8 +617,10 @@ export default function MemoEditScreen() {
                                 key={type}
                                 style={[
                                     styles.todoTypeBtn,
-                                    memo.todoType === type && { backgroundColor: `${colors.primary}20`, borderColor: colors.primary }
+                                    memo.todoType === type && { backgroundColor: `${colors.primary}20`, borderColor: colors.primary },
+                                    !isOnline && { opacity: 0.5 }
                                 ]}
+                                disabled={!isOnline}
                                 onPress={() => updateMemo(memo.id, { todoType: type, todoDate: type !== 'none' ? (memo.todoDate || new Date().toISOString().split('T')[0]) : null })}
                             >
                                 <Text style={[styles.todoTypeBtnText, { color: memo.todoType === type ? colors.primary : colors.textSecondary }]}>
@@ -590,8 +632,9 @@ export default function MemoEditScreen() {
 
                     {memo.todoType !== 'none' && (
                         <TouchableOpacity
-                            style={styles.todoDateContainer}
-                            onPress={() => setShowDatePicker(true)}
+                            style={[styles.todoDateContainer, !isOnline && { opacity: 0.5 }]}
+                            onPress={() => isOnline && setShowDatePicker(true)}
+                            disabled={!isOnline}
                         >
                             <Ionicons name="calendar-outline" size={20} color={colors.textTertiary} />
                             <Text style={[styles.dateText, { color: colors.text }]}>
@@ -625,13 +668,15 @@ export default function MemoEditScreen() {
                         <Text style={[styles.triggersTitle, { color: colorScheme === 'dark' ? '#D1D5DB' : '#374151' }]}>
                             トリガー
                         </Text>
-                        <TouchableOpacity
-                            style={[styles.addTriggerBtn, { backgroundColor: `${colors.primary}15` }]}
-                            onPress={() => router.push({ pathname: '/trigger/edit', params: { memoId: id } })}
-                        >
-                            <Ionicons name="add" size={18} color={colors.primary} />
-                            <Text style={[styles.addTriggerText, { color: colors.primary }]}>追加</Text>
-                        </TouchableOpacity>
+                        {isOnline && (
+                            <TouchableOpacity
+                                style={[styles.addTriggerBtn, { backgroundColor: `${colors.primary}15` }]}
+                                onPress={() => router.push({ pathname: '/trigger/edit', params: { memoId: id } })}
+                            >
+                                <Ionicons name="add" size={18} color={colors.primary} />
+                                <Text style={[styles.addTriggerText, { color: colors.primary }]}>追加</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
 
                     {memo.triggers.length === 0 ? (
@@ -692,16 +737,19 @@ export default function MemoEditScreen() {
                                         onValueChange={() => handleToggleTrigger(trigger)}
                                         trackColor={{ false: `${colors.text}20`, true: colors.primary }}
                                         thumbColor={Platform.OS === 'ios' ? '#FFFFFF' : trigger.isActive ? '#FFFFFF' : '#f4f3f4'}
+                                        disabled={!isOnline}
                                     />
-                                    <Pressable
-                                        onPress={(e: GestureResponderEvent) => {
-                                            e.stopPropagation();
-                                            handleDeleteTrigger(trigger.id);
-                                        }}
-                                        hitSlop={8}
-                                    >
-                                        <Ionicons name="close-circle" size={22} color={colors.textTertiary} />
-                                    </Pressable>
+                                    {isOnline && (
+                                        <Pressable
+                                            onPress={(e: GestureResponderEvent) => {
+                                                e.stopPropagation();
+                                                handleDeleteTrigger(trigger.id);
+                                            }}
+                                            hitSlop={8}
+                                        >
+                                            <Ionicons name="close-circle" size={22} color={colors.textTertiary} />
+                                        </Pressable>
+                                    )}
                                 </View>
                             </View>
                         ))

@@ -106,7 +106,13 @@ export function MemoProvider({ children }: { children: ReactNode }) {
             setMemos(prev => {
                 const memoToDelete = prev.find(m => m.id === id);
                 if (memoToDelete) {
-                    const updatedMemo = { ...memoToDelete, deletedAt: safeNow, updatedAt: safeNow };
+                    const updatedMemo = {
+                        ...memoToDelete,
+                        isDeleted: true,
+                        deletedAt: safeNow,
+                        updatedAt: safeNow,
+                        version: memoToDelete.version + 1
+                    };
                     setDeletedMemos(prevDeleted => [updatedMemo, ...prevDeleted]);
                     return prev.filter(m => m.id !== id);
                 }
@@ -128,7 +134,13 @@ export function MemoProvider({ children }: { children: ReactNode }) {
             const memoToRestore = deletedMemos.find(m => m.id === id);
             if (memoToRestore) {
                 setDeletedMemos(prev => prev.filter(m => m.id !== id));
-                setMemos(prev => [{ ...memoToRestore, deletedAt: null, updatedAt: safeNow }, ...prev].sort((a, b) => {
+                setMemos(prev => [{
+                    ...memoToRestore,
+                    isDeleted: false,
+                    deletedAt: null,
+                    updatedAt: safeNow,
+                    version: memoToRestore.version + 1
+                }, ...prev].sort((a, b) => {
                     if (a.isPinned !== b.isPinned) return (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0);
                     return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
                 }));
@@ -146,7 +158,8 @@ export function MemoProvider({ children }: { children: ReactNode }) {
     const permanentlyDeleteMemoHandler = useCallback(async (id: string) => {
         if (Platform.OS === 'web') console.log('MemoContext: permanentlyDeleteMemo starting', id);
         try {
-            await TombstoneService.addTombstone(id);
+            const memo = deletedMemos.find(m => m.id === id);
+            await TombstoneService.addTombstone(id, memo?.version || 1);
             await MemoRepo.permanentlyDeleteMemo(id);
             setDeletedMemos(prev => prev.filter(m => m.id !== id));
             if (Platform.OS === 'web') alert('完全に削除しました');
@@ -154,14 +167,14 @@ export function MemoProvider({ children }: { children: ReactNode }) {
             console.error('Error permanently deleting memo:', err);
             if (Platform.OS === 'web') alert('完全削除中にエラー: ' + err);
         }
-    }, []);
+    }, [deletedMemos]);
 
     const emptyTrashHandler = useCallback(async () => {
         if (Platform.OS === 'web') console.log('MemoContext: emptyTrash starting');
         try {
             // Mark all items as deleted in tombstones before clearing
             for (const m of deletedMemos) {
-                await TombstoneService.addTombstone(m.id);
+                await TombstoneService.addTombstone(m.id, m.version);
             }
             await MemoRepo.emptyTrash();
             setDeletedMemos([]);

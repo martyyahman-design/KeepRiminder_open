@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "config": {
-        "googleMapsApiKey": "AIzaSyDVZ5WvsipebcF0WiuqJqQa6fsTwIkjZiw"
+        "googleMapsApiKey": "${EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}"
       },
       "infoPlist": {
         "NSLocationAlwaysAndWhenInUseUsageDescription": "リマインダーの場所トリガーのために、バックグラウンドでの位置情報アクセスが必要です。",
@@ -32,7 +32,7 @@
     "android": {
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyDVZ5WvsipebcF0WiuqJqQa6fsTwIkjZiw"
+          "apiKey": "${EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}"
         }
       },
       "adaptiveIcon": {

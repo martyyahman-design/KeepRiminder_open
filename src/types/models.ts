@@ -17,11 +17,20 @@ export interface Memo {
     todoDate: string | null; // YYYY-MM-DD
     isCompleted: boolean;
     completedAt: string | null;
+    isDeleted: boolean; // フラグベースの削除管理
     deletedAt?: string | null;
 
     createdAt: string;
     updatedAt: string;
+    version: number;
+    lastSyncedVersion: number;
     tag: 'work' | 'private';
+}
+
+export interface Tombstone {
+    id: string;
+    version: number;
+    deletedAt: string;
 }
 
 export type MemoColor =
