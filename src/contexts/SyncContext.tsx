@@ -129,11 +129,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                 if (mode === 'push') {
                     if (lastEtagRef.current && cloudEtag !== lastEtagRef.current) {
                         console.warn(`SyncContext: 競合を検知しました (Cloud Etag: ${cloudEtag}, Local Etag: ${lastEtagRef.current})。PULLを強制します。`);
-                        if (Platform.OS !== 'web') {
-                            Alert.alert('同期エラー', '他のデバイスで更新が行われたため、最新データを取得します。現在の編集内容を反映するため、もう一度保存/同期を行ってください。');
-                        } else {
-                            window.alert('他のデバイスで更新が行われたため、最新データを取得します。現在の編集内容を反映するため、もう一度保存/同期を行ってください。');
-                        }
+                        const msg = '他のデバイスで更新が行われたため、最新データを取得します。現在の編集内容を反映するため、もう一度保存/同期を行ってください。';
+                        if (Platform.OS !== 'web') Alert.alert('同期エラー', msg);
+                        else window.alert(msg);
                         mode = 'pull'; // 強制PULLに切り替え
                     }
                 }
@@ -162,6 +160,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                     const currentTombstones = await TombstoneService.getTombstones();
 
                     console.log(`SyncContext: Merging Data. Cloud ETag: ${cloudEtag}`);
+                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
                     let hasLocalChanges = false;
                     let conflictNotified = false;
 
@@ -239,15 +238,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                         }
                     }
 
-                    if (hasLocalChanges) {
-                        await refreshMemos();
-                        // 画面に通知 (手動Pullの場合のみ)
-                        if (Platform.OS !== 'web' && mode === 'pull') {
-                            Alert.alert('同期', 'クラウドから新しい変更を受信しました');
-                        }
-                    } else if (Platform.OS !== 'web' && mode === 'pull') {
-                        Alert.alert('同期', 'サーバー上のデータは最新でした');
-                    }
+                    await refreshMemos();
 
                     // 成功した ETag 等の保存
                     setLastEtag(cloudEtag);
@@ -376,7 +367,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                 performSync('push');
             }
         }
-    }, [accessToken, getFreshToken, clearAccessToken, refreshMemos, isStateLoaded]);
+    }, [user, accessToken, getFreshToken, clearAccessToken, refreshMemos, isStateLoaded]);
 
     useEffect(() => {
         if (!isStateLoaded || !isOnline) return;
