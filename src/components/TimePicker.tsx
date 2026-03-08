@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import {
     View,
     Text,
@@ -7,6 +7,7 @@ import {
     Modal,
     Pressable,
     ScrollView,
+    Platform,
 } from 'react-native';
 import { useThemeColors, Spacing, FontSize, BorderRadius, getCardShadow } from '../theme';
 
@@ -29,6 +30,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
     const [hours, setHours] = useState(initialValues.hours);
     const [minutes, setMinutes] = useState(initialValues.minutes);
     const [seconds, setSeconds] = useState(initialValues.seconds || 0);
+    const [activeTab, setActiveTab] = useState<'hours' | 'minutes' | 'seconds'>('hours');
 
     const hourScrollRef = React.useRef<ScrollView>(null);
     const minuteScrollRef = React.useRef<ScrollView>(null);
@@ -40,15 +42,18 @@ export const TimePicker: React.FC<TimePickerProps> = ({
             setHours(initialValues.hours);
             setMinutes(initialValues.minutes);
             setSeconds(initialValues.seconds || 0);
+            setActiveTab('hours');
 
-            // Small delay to ensure layout is ready
-            setTimeout(() => {
-                hourScrollRef.current?.scrollTo({ y: initialValues.hours * 44, animated: false });
-                minuteScrollRef.current?.scrollTo({ y: initialValues.minutes * 44, animated: false });
-                if (mode === 'duration') {
-                    secondScrollRef.current?.scrollTo({ y: (initialValues.seconds || 0) * 44, animated: false });
-                }
-            }, 100);
+            if (Platform.OS !== 'web') {
+                // Small delay to ensure layout is ready
+                setTimeout(() => {
+                    hourScrollRef.current?.scrollTo({ y: initialValues.hours * 44, animated: false });
+                    minuteScrollRef.current?.scrollTo({ y: initialValues.minutes * 44, animated: false });
+                    if (mode === 'duration') {
+                        secondScrollRef.current?.scrollTo({ y: (initialValues.seconds || 0) * 44, animated: false });
+                    }
+                }, 100);
+            }
         }
     }, [visible, initialValues, mode]);
 
@@ -70,6 +75,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                 <ScrollView
                     ref={scrollRef}
                     showsVerticalScrollIndicator={false}
+                    style={{ flex: 1, width: '100%' }}
                     contentContainerStyle={styles.scrollContent}
                 >
                     {Array.from({ length: max + 1 }).map((_, i) => (
@@ -94,6 +100,119 @@ export const TimePicker: React.FC<TimePickerProps> = ({
         );
     };
 
+    const renderWebGrid = (
+        max: number,
+        current: number,
+        setter: (val: number) => void,
+        columns: number = 6
+    ) => {
+        return (
+            <View style={styles.webGrid}>
+                {Array.from({ length: max + 1 }).map((_, i) => (
+                    <TouchableOpacity
+                        key={i}
+                        style={[
+                            styles.webGridItem,
+                            {
+                                width: `${100 / columns}%`,
+                                backgroundColor: current === i ? colors.primary : 'transparent',
+                            }
+                        ]}
+                        onPress={() => setter(i)}
+                    >
+                        <Text style={[
+                            styles.webGridText,
+                            { color: current === i ? '#FFFFFF' : colors.text }
+                        ]}>
+                            {i.toString().padStart(2, '0')}
+                        </Text>
+                    </TouchableOpacity>
+                ))}
+            </View>
+        );
+    };
+
+    const PickerContent = (
+        <View style={styles.centeredView}>
+            <Pressable style={styles.overlay} onPress={onClose} />
+            <View style={[styles.modalContent, { backgroundColor: colors.surface, ...getCardShadow(colors) }]}>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>
+                    {mode === 'time' ? '時刻を選択' : '時間を設定'}
+                </Text>
+
+                {Platform.OS === 'web' ? (
+                    <View style={styles.webContainer}>
+                        <View style={styles.webTabs}>
+                            <TouchableOpacity
+                                onPress={() => setActiveTab('hours')}
+                                style={[styles.webTab, activeTab === 'hours' && { borderBottomColor: colors.primary }]}
+                            >
+                                <Text style={[styles.webTabText, { color: activeTab === 'hours' ? colors.primary : colors.textSecondary }]}>
+                                    {hours.toString().padStart(2, '0')}{mode === 'time' ? '時' : '時間'}
+                                </Text>
+                            </TouchableOpacity>
+                            <Text style={[styles.webTabSeparator, { color: colors.textSecondary }]}>:</Text>
+                            <TouchableOpacity
+                                onPress={() => setActiveTab('minutes')}
+                                style={[styles.webTab, activeTab === 'minutes' && { borderBottomColor: colors.primary }]}
+                            >
+                                <Text style={[styles.webTabText, { color: activeTab === 'minutes' ? colors.primary : colors.textSecondary }]}>
+                                    {minutes.toString().padStart(2, '0')}分
+                                </Text>
+                            </TouchableOpacity>
+                            {mode === 'duration' && (
+                                <>
+                                    <Text style={[styles.webTabSeparator, { color: colors.textSecondary }]}>:</Text>
+                                    <TouchableOpacity
+                                        onPress={() => setActiveTab('seconds')}
+                                        style={[styles.webTab, activeTab === 'seconds' && { borderBottomColor: colors.primary }]}
+                                    >
+                                        <Text style={[styles.webTabText, { color: activeTab === 'seconds' ? colors.primary : colors.textSecondary }]}>
+                                            {seconds.toString().padStart(2, '0')}秒
+                                        </Text>
+                                    </TouchableOpacity>
+                                </>
+                            )}
+                        </View>
+
+                        <View style={styles.webGridScrollArea}>
+                            {activeTab === 'hours' && renderWebGrid(mode === 'time' ? 23 : 99, hours, (val) => { setHours(val); setActiveTab('minutes'); }, 6)}
+                            {activeTab === 'minutes' && renderWebGrid(59, minutes, (val) => { setMinutes(val); if (mode === 'duration') setActiveTab('seconds'); }, 10)}
+                            {activeTab === 'seconds' && renderWebGrid(59, seconds, setSeconds, 10)}
+                        </View>
+                    </View>
+                ) : (
+                    <View style={styles.pickerContainer}>
+                        {renderPickerColumn(mode === 'time' ? '時' : '時間', mode === 'time' ? 23 : 99, hours, setHours, hourScrollRef)}
+                        {renderPickerColumn('分', 59, minutes, setMinutes, minuteScrollRef)}
+                        {mode === 'duration' && renderPickerColumn('秒', 59, seconds, setSeconds, secondScrollRef)}
+                    </View>
+                )}
+
+                <View style={styles.footer}>
+                    <TouchableOpacity onPress={onClose} style={styles.btn}>
+                        <Text style={[styles.btnText, { color: colors.textSecondary }]}>キャンセル</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={handleConfirm}
+                        style={[styles.btn, styles.confirmBtn, { backgroundColor: colors.primary }]}
+                    >
+                        <Text style={[styles.btnText, { color: '#FFFFFF' }]}>決定</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </View>
+    );
+
+    if (Platform.OS === 'web') {
+        if (!visible) return null;
+        return (
+            <View style={[StyleSheet.absoluteFill, { zIndex: 10000, position: 'fixed' as any }]}>
+                {PickerContent}
+            </View>
+        );
+    }
+
     return (
         <Modal
             visible={visible}
@@ -101,32 +220,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
             animationType="fade"
             onRequestClose={onClose}
         >
-            <View style={styles.centeredView}>
-                <Pressable style={styles.overlay} onPress={onClose} />
-                <View style={[styles.modalContent, { backgroundColor: colors.surface, ...getCardShadow(colors) }]}>
-                    <Text style={[styles.modalTitle, { color: colors.text }]}>
-                        {mode === 'time' ? '時刻を選択' : '時間を設定'}
-                    </Text>
-
-                    <View style={styles.pickerContainer}>
-                        {renderPickerColumn(mode === 'time' ? '時' : '時間', mode === 'time' ? 23 : 99, hours, setHours, hourScrollRef)}
-                        {renderPickerColumn('分', 59, minutes, setMinutes, minuteScrollRef)}
-                        {mode === 'duration' && renderPickerColumn('秒', 59, seconds, setSeconds, secondScrollRef)}
-                    </View>
-
-                    <View style={styles.footer}>
-                        <TouchableOpacity onPress={onClose} style={styles.btn}>
-                            <Text style={[styles.btnText, { color: colors.textSecondary }]}>キャンセル</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            onPress={handleConfirm}
-                            style={[styles.btn, styles.confirmBtn, { backgroundColor: colors.primary }]}
-                        >
-                            <Text style={[styles.btnText, { color: '#FFFFFF' }]}>決定</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </View>
+            {PickerContent}
         </Modal>
     );
 };
@@ -200,5 +294,50 @@ const styles = StyleSheet.create({
     btnText: {
         fontSize: FontSize.md,
         fontWeight: '700',
+    },
+    // Web Grid Styles
+    webContainer: {
+        marginBottom: Spacing.xl,
+    },
+    webTabs: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: Spacing.lg,
+        gap: Spacing.sm,
+    },
+    webTab: {
+        paddingBottom: Spacing.xs,
+        borderBottomWidth: 2,
+        borderBottomColor: 'transparent',
+        minWidth: 60,
+        alignItems: 'center',
+    },
+    webTabText: {
+        fontSize: FontSize.xl,
+        fontWeight: '700',
+    },
+    webTabSeparator: {
+        fontSize: FontSize.xl,
+        fontWeight: '700',
+    },
+    webGridScrollArea: {
+        maxHeight: 300,
+        overflow: 'auto' as any,
+    },
+    webGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'flex-start',
+    },
+    webGridItem: {
+        aspectRatio: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: BorderRadius.sm,
+    },
+    webGridText: {
+        fontSize: FontSize.sm,
+        fontWeight: '600',
     },
 });

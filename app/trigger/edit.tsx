@@ -218,340 +218,346 @@ export default function TriggerEditScreen() {
     };
 
     return (
-        <ScrollView
-            style={[styles.container, { backgroundColor: colors.background }]}
-            contentContainerStyle={styles.content}
-        >
-            {/* Trigger Type Selection */}
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>トリガータイプ</Text>
-            <View style={styles.typeGrid}>
-                {TRIGGER_TYPES.map(t => (
+        <View style={styles.container}>
+            <ScrollView
+                style={[styles.scrollContainer, { backgroundColor: colors.background }]}
+                contentContainerStyle={styles.content}
+            >
+                {/* Trigger Type Selection */}
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>トリガータイプ</Text>
+                <View style={styles.typeGrid}>
+                    {TRIGGER_TYPES.map(t => (
+                        <TouchableOpacity
+                            key={t.type}
+                            style={[
+                                styles.typeCard,
+                                {
+                                    backgroundColor: selectedType === t.type ? `${colors.primary}15` : colors.surface,
+                                    borderColor: selectedType === t.type ? colors.primary : colors.border,
+                                },
+                            ]}
+                            onPress={() => setSelectedType(t.type)}
+                        >
+                            <Ionicons
+                                name={t.icon as any}
+                                size={24}
+                                color={selectedType === t.type ? colors.primary : colors.textSecondary}
+                            />
+                            <Text
+                                style={[
+                                    styles.typeLabel,
+                                    { color: selectedType === t.type ? colors.primary : colors.text },
+                                ]}
+                            >
+                                {t.label}
+                            </Text>
+                            <Text style={[styles.typeDesc, { color: colors.textTertiary }]}>{t.desc}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+
+                {/* Type-specific Settings */}
+                <Text style={[styles.sectionTitle, { color: colors.text, marginTop: Spacing.xxl }]}>設定</Text>
+
+                {selectedType === 'datetime' && (
+                    <View style={[styles.settingsCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <Text style={[styles.settingLabel, { color: colors.textSecondary }]}>日時</Text>
+                        <TouchableOpacity
+                            style={[styles.pickerTrigger, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
+                            onPress={() => setDatePickerVisible(true)}
+                        >
+                            <Ionicons name="calendar-outline" size={20} color={colors.primary} />
+                            <Text style={[styles.pickerTriggerText, { color: colors.text }]}>
+                                {year}/{month}/{day}
+                            </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.pickerTrigger, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, marginTop: Spacing.md }]}
+                            onPress={() => {
+                                const now = new Date();
+                                setHour(now.getHours().toString().padStart(2, '0'));
+                                setMinute(now.getMinutes().toString().padStart(2, '0'));
+                                setTimePickerVisible(true);
+                            }}
+                        >
+                            <Ionicons name="time-outline" size={20} color={colors.primary} />
+                            <Text style={[styles.pickerTriggerText, { color: colors.text }]}>
+                                {hour}:{minute}
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
+                {selectedType === 'timer' && (
+                    <View style={[styles.settingsCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <View style={styles.modeTabs}>
+                            <TouchableOpacity
+                                style={[styles.modeTab, timerMode === 'countdown' && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
+                                onPress={() => setTimerMode('countdown')}
+                            >
+                                <Text style={[styles.modeTabText, { color: timerMode === 'countdown' ? colors.primary : colors.textSecondary }]}>カウントダウン</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modeTab, timerMode === 'time' && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
+                                onPress={() => setTimerMode('time')}
+                            >
+                                <Text style={[styles.modeTabText, { color: timerMode === 'time' ? colors.primary : colors.textSecondary }]}>時刻指定</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {timerMode === 'countdown' ? (
+                            <TouchableOpacity
+                                style={[styles.pickerTrigger, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
+                                onPress={() => setDurationPickerVisible(true)}
+                            >
+                                <Ionicons name="timer-outline" size={20} color={colors.primary} />
+                                <Text style={[styles.pickerTriggerText, { color: colors.text }]}>
+                                    {parseInt(timerHours) > 0 ? `${timerHours}時間 ` : ''}{timerMinutes}分 {timerSeconds}秒
+                                </Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <View style={styles.targetTimeRow}>
+                                <TouchableOpacity
+                                    style={[styles.pickerTrigger, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, flex: 1 }]}
+                                    onPress={() => {
+                                        const now = new Date();
+                                        setTargetTime(`${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`);
+                                        setTargetTimePickerVisible(true);
+                                    }}
+                                >
+                                    <Ionicons name="alarm-outline" size={22} color={colors.primary} />
+                                    <Text style={[styles.pickerTriggerText, { color: colors.text, fontSize: FontSize.xl, fontWeight: '700' }]}>
+                                        {targetTime}
+                                    </Text>
+                                </TouchableOpacity>
+                                <Text style={[styles.targetTimeDesc, { color: colors.textTertiary }]}>にアラームを鳴らす</Text>
+                            </View>
+                        )}
+                    </View>
+                )}
+
+                {(selectedType === 'location_enter' || selectedType === 'location_exit') && (
+                    <View style={[styles.settingsCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <View style={styles.presetActions}>
+                            <TouchableOpacity
+                                style={[styles.presetBtn, { backgroundColor: `${colors.primary}10`, borderColor: colors.primary }]}
+                                onPress={() => setPresetPickerVisible(true)}
+                            >
+                                <Ionicons name="bookmark-outline" size={18} color={colors.primary} />
+                                <Text style={[styles.presetBtnText, { color: colors.primary }]}>プリセットから選択</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <TextInput
+                            style={[styles.locationNameInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceElevated }]}
+                            value={locationName}
+                            onChangeText={setLocationName}
+                            placeholder="場所の名前（例: 自宅、会社）"
+                            placeholderTextColor={colors.textTertiary}
+                        />
+
+                        <View style={styles.mapActionRow}>
+                            <TouchableOpacity
+                                style={[styles.mapTriggerBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
+                                onPress={async () => {
+                                    const { requestLocationPermissions } = await import('../../src/services/geofencingService');
+                                    const hasPermission = await requestLocationPermissions();
+                                    if (!hasPermission) {
+                                        Alert.alert('権限エラー', '地図を表示するための位置情報権限がありません。設定から権限を許可してください。');
+                                        return;
+                                    }
+                                    setMapVisible(true);
+                                }}
+                            >
+                                <Ionicons name="map-outline" size={20} color={colors.primary} />
+                                <Text style={[styles.mapTriggerText, { color: colors.text }]}>地図で場所・範囲を指定</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.coordInfoRow}>
+                            <View style={styles.coordInfoItem}>
+                                <Text style={[styles.coordInfoLabel, { color: colors.textTertiary }]}>緯度/経度</Text>
+                                <Text style={[styles.coordInfoValue, { color: colors.textSecondary }]}>
+                                    {latitude ? `${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)}` : '未設定'}
+                                </Text>
+                            </View>
+                            <View style={styles.coordInfoItem}>
+                                <Text style={[styles.coordInfoLabel, { color: colors.textTertiary }]}>半径</Text>
+                                <Text style={[styles.coordInfoValue, { color: colors.textSecondary }]}>{radius}m</Text>
+                            </View>
+                        </View>
+
+                        <TouchableOpacity
+                            style={[styles.savePresetInlineBtn, { opacity: (locationName && latitude) ? 1 : 0.5 }]}
+                            onPress={handleSavePreset}
+                            disabled={!locationName || !latitude}
+                        >
+                            <Text style={[styles.savePresetInlineText, { color: colors.primary }]}>この場所をプリセットに保存</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
+                {/* Action Type */}
+                <Text style={[styles.sectionTitle, { color: colors.text, marginTop: Spacing.xxl }]}>アクション</Text>
+                <View style={styles.actionRow}>
                     <TouchableOpacity
-                        key={t.type}
                         style={[
-                            styles.typeCard,
+                            styles.actionCard,
                             {
-                                backgroundColor: selectedType === t.type ? `${colors.primary}15` : colors.surface,
-                                borderColor: selectedType === t.type ? colors.primary : colors.border,
+                                backgroundColor: actionType === 'alarm' ? `${colors.accent}15` : colors.surface,
+                                borderColor: actionType === 'alarm' ? colors.accent : colors.border,
                             },
                         ]}
-                        onPress={() => setSelectedType(t.type)}
+                        onPress={() => setActionType('alarm')}
                     >
                         <Ionicons
-                            name={t.icon as any}
-                            size={24}
-                            color={selectedType === t.type ? colors.primary : colors.textSecondary}
+                            name="alarm"
+                            size={28}
+                            color={actionType === 'alarm' ? colors.accent : colors.textSecondary}
                         />
                         <Text
                             style={[
-                                styles.typeLabel,
-                                { color: selectedType === t.type ? colors.primary : colors.text },
+                                styles.actionLabel,
+                                { color: actionType === 'alarm' ? colors.accent : colors.text },
                             ]}
                         >
-                            {t.label}
+                            アラーム
                         </Text>
-                        <Text style={[styles.typeDesc, { color: colors.textTertiary }]}>{t.desc}</Text>
-                    </TouchableOpacity>
-                ))}
-            </View>
-
-            {/* Type-specific Settings */}
-            <Text style={[styles.sectionTitle, { color: colors.text, marginTop: Spacing.xxl }]}>設定</Text>
-
-            {selectedType === 'datetime' && (
-                <View style={[styles.settingsCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    <Text style={[styles.settingLabel, { color: colors.textSecondary }]}>日時</Text>
-                    <TouchableOpacity
-                        style={[styles.pickerTrigger, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
-                        onPress={() => setDatePickerVisible(true)}
-                    >
-                        <Ionicons name="calendar-outline" size={20} color={colors.primary} />
-                        <Text style={[styles.pickerTriggerText, { color: colors.text }]}>
-                            {year}/{month}/{day}
+                        <Text style={[styles.actionDesc, { color: colors.textTertiary }]}>
+                            音+バイブで通知
                         </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.pickerTrigger, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, marginTop: Spacing.md }]}
-                        onPress={() => {
-                            const now = new Date();
-                            setHour(now.getHours().toString().padStart(2, '0'));
-                            setMinute(now.getMinutes().toString().padStart(2, '0'));
-                            setTimePickerVisible(true);
-                        }}
-                    >
-                        <Ionicons name="time-outline" size={20} color={colors.primary} />
-                        <Text style={[styles.pickerTriggerText, { color: colors.text }]}>
-                            {hour}:{minute}
-                        </Text>
-                    </TouchableOpacity>
-
-                    <CalendarDatePicker
-                        visible={isDatePickerVisible}
-                        onClose={() => setDatePickerVisible(false)}
-                        initialDate={`${year}-${month}-${day}`}
-                        onSelect={(date) => {
-                            const [y, m, d] = date.split('-');
-                            setYear(y);
-                            setMonth(m);
-                            setDay(d);
-                        }}
-                    />
-
-                    <TimePicker
-                        visible={isTimePickerVisible}
-                        onClose={() => setTimePickerVisible(false)}
-                        mode="time"
-                        initialValues={{ hours: parseInt(hour), minutes: parseInt(minute) }}
-                        onSelect={(vals) => {
-                            setHour(vals.hours.toString().padStart(2, '0'));
-                            setMinute(vals.minutes.toString().padStart(2, '0'));
-                        }}
-                    />
-                </View>
-            )}
-
-            {selectedType === 'timer' && (
-                <View style={[styles.settingsCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    <View style={styles.modeTabs}>
-                        <TouchableOpacity
-                            style={[styles.modeTab, timerMode === 'countdown' && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
-                            onPress={() => setTimerMode('countdown')}
-                        >
-                            <Text style={[styles.modeTabText, { color: timerMode === 'countdown' ? colors.primary : colors.textSecondary }]}>カウントダウン</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.modeTab, timerMode === 'time' && { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
-                            onPress={() => setTimerMode('time')}
-                        >
-                            <Text style={[styles.modeTabText, { color: timerMode === 'time' ? colors.primary : colors.textSecondary }]}>時刻指定</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    {timerMode === 'countdown' ? (
-                        <TouchableOpacity
-                            style={[styles.pickerTrigger, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
-                            onPress={() => setDurationPickerVisible(true)}
-                        >
-                            <Ionicons name="timer-outline" size={20} color={colors.primary} />
-                            <Text style={[styles.pickerTriggerText, { color: colors.text }]}>
-                                {parseInt(timerHours) > 0 ? `${timerHours}時間 ` : ''}{timerMinutes}分 {timerSeconds}秒
-                            </Text>
-                        </TouchableOpacity>
-                    ) : (
-                        <View style={styles.targetTimeRow}>
-                            <TouchableOpacity
-                                style={[styles.pickerTrigger, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, flex: 1 }]}
-                                onPress={() => {
-                                    const now = new Date();
-                                    setTargetTime(`${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`);
-                                    setTargetTimePickerVisible(true);
-                                }}
-                            >
-                                <Ionicons name="alarm-outline" size={22} color={colors.primary} />
-                                <Text style={[styles.pickerTriggerText, { color: colors.text, fontSize: FontSize.xl, fontWeight: '700' }]}>
-                                    {targetTime}
-                                </Text>
-                            </TouchableOpacity>
-                            <Text style={[styles.targetTimeDesc, { color: colors.textTertiary }]}>にアラームを鳴らす</Text>
-                        </View>
-                    )}
-
-                    <TimePicker
-                        visible={isDurationPickerVisible}
-                        onClose={() => setDurationPickerVisible(false)}
-                        mode="duration"
-                        initialValues={{
-                            hours: parseInt(timerHours),
-                            minutes: parseInt(timerMinutes),
-                            seconds: parseInt(timerSeconds)
-                        }}
-                        onSelect={(vals) => {
-                            setTimerHours(vals.hours.toString());
-                            setTimerMinutes(vals.minutes.toString());
-                            setTimerSeconds((vals.seconds || 0).toString());
-                        }}
-                    />
-
-                    <TimePicker
-                        visible={isTargetTimePickerVisible}
-                        onClose={() => setTargetTimePickerVisible(false)}
-                        mode="time"
-                        initialValues={{
-                            hours: parseInt(targetTime.split(':')[0]),
-                            minutes: parseInt(targetTime.split(':')[1])
-                        }}
-                        onSelect={(vals) => {
-                            setTargetTime(`${vals.hours.toString().padStart(2, '0')}:${vals.minutes.toString().padStart(2, '0')}`);
-                        }}
-                    />
-                </View>
-            )}
-
-            {(selectedType === 'location_enter' || selectedType === 'location_exit') && (
-                <View style={[styles.settingsCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    <View style={styles.presetActions}>
-                        <TouchableOpacity
-                            style={[styles.presetBtn, { backgroundColor: `${colors.primary}10`, borderColor: colors.primary }]}
-                            onPress={() => setPresetPickerVisible(true)}
-                        >
-                            <Ionicons name="bookmark-outline" size={18} color={colors.primary} />
-                            <Text style={[styles.presetBtnText, { color: colors.primary }]}>プリセットから選択</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    <TextInput
-                        style={[styles.locationNameInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceElevated }]}
-                        value={locationName}
-                        onChangeText={setLocationName}
-                        placeholder="場所の名前（例: 自宅、会社）"
-                        placeholderTextColor={colors.textTertiary}
-                    />
-
-                    <View style={styles.mapActionRow}>
-                        <TouchableOpacity
-                            style={[styles.mapTriggerBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
-                            onPress={async () => {
-                                const { requestLocationPermissions } = await import('../../src/services/geofencingService');
-                                const hasPermission = await requestLocationPermissions();
-                                if (!hasPermission) {
-                                    Alert.alert('権限エラー', '地図を表示するための位置情報権限がありません。設定から権限を許可してください。');
-                                    return;
-                                }
-                                setMapVisible(true);
-                            }}
-                        >
-                            <Ionicons name="map-outline" size={20} color={colors.primary} />
-                            <Text style={[styles.mapTriggerText, { color: colors.text }]}>地図で場所・範囲を指定</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.coordInfoRow}>
-                        <View style={styles.coordInfoItem}>
-                            <Text style={[styles.coordInfoLabel, { color: colors.textTertiary }]}>緯度/経度</Text>
-                            <Text style={[styles.coordInfoValue, { color: colors.textSecondary }]}>
-                                {latitude ? `${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)}` : '未設定'}
-                            </Text>
-                        </View>
-                        <View style={styles.coordInfoItem}>
-                            <Text style={[styles.coordInfoLabel, { color: colors.textTertiary }]}>半径</Text>
-                            <Text style={[styles.coordInfoValue, { color: colors.textSecondary }]}>{radius}m</Text>
-                        </View>
-                    </View>
-
-                    <TouchableOpacity
-                        style={[styles.savePresetInlineBtn, { opacity: (locationName && latitude) ? 1 : 0.5 }]}
-                        onPress={handleSavePreset}
-                        disabled={!locationName || !latitude}
-                    >
-                        <Text style={[styles.savePresetInlineText, { color: colors.primary }]}>この場所をプリセットに保存</Text>
-                    </TouchableOpacity>
-
-                    <MapPicker
-                        visible={isMapVisible}
-                        onClose={() => setMapVisible(false)}
-                        initialLocation={latitude ? {
-                            latitude: parseFloat(latitude),
-                            longitude: parseFloat(longitude),
-                            radius: parseInt(radius)
-                        } : undefined}
-                        onSelect={(loc) => {
-                            setLatitude(loc.latitude.toString());
-                            setLongitude(loc.longitude.toString());
-                            setRadius(loc.radius.toString());
-                        }}
-                    />
-
-                    <LocationPresetPicker
-                        visible={isPresetPickerVisible}
-                        onClose={() => setPresetPickerVisible(false)}
-                        presets={presets}
-                        onDelete={handleDeletePreset}
-                        onSelect={(p) => {
-                            setLocationName(p.name);
-                            setLatitude(p.latitude.toString());
-                            setLongitude(p.longitude.toString());
-                            setRadius(p.radius.toString());
-                        }}
-                    />
-                </View>
-            )}
-
-            {/* Action Type */}
-            <Text style={[styles.sectionTitle, { color: colors.text, marginTop: Spacing.xxl }]}>アクション</Text>
-            <View style={styles.actionRow}>
-                <TouchableOpacity
-                    style={[
-                        styles.actionCard,
-                        {
-                            backgroundColor: actionType === 'alarm' ? `${colors.accent}15` : colors.surface,
-                            borderColor: actionType === 'alarm' ? colors.accent : colors.border,
-                        },
-                    ]}
-                    onPress={() => setActionType('alarm')}
-                >
-                    <Ionicons
-                        name="alarm"
-                        size={28}
-                        color={actionType === 'alarm' ? colors.accent : colors.textSecondary}
-                    />
-                    <Text
                         style={[
-                            styles.actionLabel,
-                            { color: actionType === 'alarm' ? colors.accent : colors.text },
+                            styles.actionCard,
+                            {
+                                backgroundColor: actionType === 'notification' ? `${colors.primary}15` : colors.surface,
+                                borderColor: actionType === 'notification' ? colors.primary : colors.border,
+                            },
                         ]}
+                        onPress={() => setActionType('notification')}
                     >
-                        アラーム
-                    </Text>
-                    <Text style={[styles.actionDesc, { color: colors.textTertiary }]}>
-                        音+バイブで通知
-                    </Text>
-                </TouchableOpacity>
+                        <Ionicons
+                            name="notifications-outline"
+                            size={28}
+                            color={actionType === 'notification' ? colors.primary : colors.textSecondary}
+                        />
+                        <Text
+                            style={[
+                                styles.actionLabel,
+                                { color: actionType === 'notification' ? colors.primary : colors.text },
+                            ]}
+                        >
+                            通知
+                        </Text>
+                        <Text style={[styles.actionDesc, { color: colors.textTertiary }]}>
+                            通知バナーに表示
+                        </Text>
+                    </TouchableOpacity>
+                </View>
 
+                {/* Save Button */}
                 <TouchableOpacity
-                    style={[
-                        styles.actionCard,
-                        {
-                            backgroundColor: actionType === 'notification' ? `${colors.primary}15` : colors.surface,
-                            borderColor: actionType === 'notification' ? colors.primary : colors.border,
-                        },
-                    ]}
-                    onPress={() => setActionType('notification')}
+                    style={[styles.saveBtn, { backgroundColor: colors.primary, ...getCardShadow(colors) }]}
+                    onPress={handleSave}
+                    activeOpacity={0.7}
                 >
-                    <Ionicons
-                        name="notifications-outline"
-                        size={28}
-                        color={actionType === 'notification' ? colors.primary : colors.textSecondary}
-                    />
-                    <Text
-                        style={[
-                            styles.actionLabel,
-                            { color: actionType === 'notification' ? colors.primary : colors.text },
-                        ]}
-                    >
-                        通知
-                    </Text>
-                    <Text style={[styles.actionDesc, { color: colors.textTertiary }]}>
-                        通知バナーに表示
-                    </Text>
+                    <Ionicons name="checkmark" size={22} color="#FFFFFF" />
+                    <Text style={styles.saveBtnText}>トリガーを保存</Text>
                 </TouchableOpacity>
-            </View>
+            </ScrollView>
 
-            {/* Save Button */}
-            <TouchableOpacity
-                style={[styles.saveBtn, { backgroundColor: colors.primary, ...getCardShadow(colors) }]}
-                onPress={handleSave}
-                activeOpacity={0.7}
-            >
-                <Ionicons name="checkmark" size={22} color="#FFFFFF" />
-                <Text style={styles.saveBtnText}>トリガーを保存</Text>
-            </TouchableOpacity>
-        </ScrollView>
+            {/* Pickers (Placed at the root to avoid nesting context issues) */}
+            <CalendarDatePicker
+                visible={isDatePickerVisible}
+                onClose={() => setDatePickerVisible(false)}
+                initialDate={`${year}-${month}-${day}`}
+                onSelect={(date) => {
+                    const [y, m, d] = date.split('-');
+                    setYear(y);
+                    setMonth(m);
+                    setDay(d);
+                }}
+            />
+
+            <TimePicker
+                visible={isTimePickerVisible}
+                onClose={() => setTimePickerVisible(false)}
+                mode="time"
+                initialValues={{ hours: parseInt(hour), minutes: parseInt(minute) }}
+                onSelect={(vals) => {
+                    setHour(vals.hours.toString().padStart(2, '0'));
+                    setMinute(vals.minutes.toString().padStart(2, '0'));
+                }}
+            />
+
+            <TimePicker
+                visible={isDurationPickerVisible}
+                onClose={() => setDurationPickerVisible(false)}
+                mode="duration"
+                initialValues={{
+                    hours: parseInt(timerHours),
+                    minutes: parseInt(timerMinutes),
+                    seconds: parseInt(timerSeconds)
+                }}
+                onSelect={(vals) => {
+                    setTimerHours(vals.hours.toString());
+                    setTimerMinutes(vals.minutes.toString());
+                    setTimerSeconds((vals.seconds || 0).toString());
+                }}
+            />
+
+            <TimePicker
+                visible={isTargetTimePickerVisible}
+                onClose={() => setTargetTimePickerVisible(false)}
+                mode="time"
+                initialValues={{
+                    hours: parseInt(targetTime.split(':')[0]),
+                    minutes: parseInt(targetTime.split(':')[1])
+                }}
+                onSelect={(vals) => {
+                    setTargetTime(`${vals.hours.toString().padStart(2, '0')}:${vals.minutes.toString().padStart(2, '0')}`);
+                }}
+            />
+
+            <MapPicker
+                visible={isMapVisible}
+                onClose={() => setMapVisible(false)}
+                initialLocation={latitude ? {
+                    latitude: parseFloat(latitude),
+                    longitude: parseFloat(longitude),
+                    radius: parseInt(radius)
+                } : undefined}
+                onSelect={(loc) => {
+                    setLatitude(loc.latitude.toString());
+                    setLongitude(loc.longitude.toString());
+                    setRadius(loc.radius.toString());
+                }}
+            />
+
+            <LocationPresetPicker
+                visible={isPresetPickerVisible}
+                onClose={() => setPresetPickerVisible(false)}
+                presets={presets}
+                onDelete={handleDeletePreset}
+                onSelect={(p) => {
+                    setLocationName(p.name);
+                    setLatitude(p.latitude.toString());
+                    setLongitude(p.longitude.toString());
+                    setRadius(p.radius.toString());
+                }}
+            />
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
+        flex: 1,
+    },
+    scrollContainer: {
         flex: 1,
     },
     content: {

@@ -90,6 +90,14 @@ export async function getAllActiveTriggers(): Promise<Trigger[]> {
     return rows.map(rowToTrigger);
 }
 
+export async function getAllTriggers(): Promise<Trigger[]> {
+    const db = await getDatabase();
+    const rows = await db.getAllAsync<any>(
+        'SELECT * FROM triggers'
+    );
+    return rows.map(rowToTrigger);
+}
+
 export async function updateTrigger(
     id: string,
     updates: Partial<Pick<Trigger, 'isActive' | 'scheduledAt' | 'durationSeconds' | 'startedAt' |
@@ -169,6 +177,27 @@ export async function upsertTrigger(trigger: Trigger): Promise<void> {
             ]
         );
     } else {
+        await db.runAsync(
+            `INSERT INTO triggers (
+            id, memoId, type, isActive, scheduledAt, durationSeconds, startedAt,
+            latitude, longitude, radius, locationName, actionType, createdAt, updatedAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                trigger.id, trigger.memoId, trigger.type, trigger.isActive ? 1 : 0, trigger.scheduledAt,
+                trigger.durationSeconds, trigger.startedAt, trigger.latitude, trigger.longitude,
+                trigger.radius, trigger.locationName, trigger.actionType, trigger.createdAt, trigger.updatedAt
+            ]
+        );
+    }
+}
+
+export async function resetTriggers(triggers: Trigger[]): Promise<void> {
+    const db = await getDatabase();
+    // すべてのトリガーを一度削除
+    await db.runAsync('DELETE FROM triggers');
+
+    // 受信したトリガーを一括挿入
+    for (const trigger of triggers) {
         await db.runAsync(
             `INSERT INTO triggers (
             id, memoId, type, isActive, scheduledAt, durationSeconds, startedAt,

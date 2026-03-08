@@ -209,7 +209,28 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                         }
                     }
 
-                    // B. 墓石処理 (クラウドから消されたものをローカルからも消す)
+                    // C. トリガー同期 (全件差し替え方式で削除も反映)
+                    if (cloudData.triggers && Array.isArray(cloudData.triggers)) {
+                        const allLocalTriggers = await TriggerRepo.getAllTriggers();
+
+                        // 内容の差分があるか比較 (IDと更新日時で簡易チェック)
+                        const isSame =
+                            allLocalTriggers.length === cloudData.triggers.length &&
+                            cloudData.triggers.every(ct => {
+                                const lt = allLocalTriggers.find(t => t.id === ct.id);
+                                return lt && lt.updatedAt === ct.updatedAt;
+                            });
+
+                        if (!isSame) {
+                            console.log(`SyncContext: Trigger mismatch found. Resetting local triggers with ${cloudData.triggers.length} cloud triggers`);
+                            await TriggerRepo.resetTriggers(cloudData.triggers);
+                            hasLocalChanges = true;
+                        } else {
+                            console.log('SyncContext: Triggers are already up to date.');
+                        }
+                    }
+
+                    // D. 墓石処理 (クラウドから消されたものをローカルからも消す)
                     for (const [id, tombstoneInfo] of Object.entries(currentTombstones)) {
                         const local = allLocalMemos.find(m => m.id === id);
                         if (local && tombstoneInfo.version >= local.version) {
@@ -245,10 +266,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
                     let finalMemos = await MemoRepo.getAllMemos();
                     let finalDeleted = await MemoRepo.getDeletedMemos();
+                    let allTriggers = await TriggerRepo.getAllTriggers();
 
                     const dataToUpload = {
                         version: 2,
                         memos: [...finalMemos, ...finalDeleted],
+                        triggers: allTriggers,
                         tombstones: currentTombstones,
                         updatedAt: new Date().toISOString()
                     };
@@ -289,11 +312,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                 // 初回アップロード
                 const localMemos = await MemoRepo.getAllMemos();
                 const localDeleted = await MemoRepo.getDeletedMemos();
+                const localTriggers = await TriggerRepo.getAllTriggers();
                 const now = new Date().toISOString();
                 const currentTombstones = await TombstoneService.getTombstones();
                 const dataToUpload = {
                     version: 2,
                     memos: [...localMemos, ...localDeleted],
+                    triggers: localTriggers,
                     tombstones: currentTombstones,
                     updatedAt: now
                 };
