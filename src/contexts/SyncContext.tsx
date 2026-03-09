@@ -19,6 +19,7 @@ interface SyncContextType {
     isSyncing: boolean;
     lastSyncedAt: Date | null;
     isInitialSyncDone: boolean;
+    syncError: string | null;
     performSync: (mode?: 'pull' | 'push') => Promise<void>;
 }
 
@@ -31,6 +32,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     const { memos, deletedMemos, refreshMemos } = useMemos();
     const [isSyncing, setIsSyncing] = useState(false);
     const [isInitialSyncDone, setIsInitialSyncDone] = useState(false);
+    const [syncError, setSyncError] = useState<string | null>(null);
     const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
     const [lastSyncedCloudUpdatedAt, setLastSyncedCloudUpdatedAt] = useState<string | null>(null);
     const [lastEtag, setLastEtag] = useState<string | null>(null);
@@ -117,7 +119,8 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         isSyncingRef.current = true;
         setIsSyncing(true);
 
-        console.log(`SyncContext: performSync(${mode}) started. isInitialSyncDone: ${isInitialSyncDoneRef.current}`);
+        console.log(`SyncContext: performSync(${mode}) started.`);
+        setSyncError(null);
         try {
             const fileInfo = await GoogleDriveService.findFile(tokenToUse, DB_FILE_NAME);
 
@@ -218,7 +221,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                         // 内容の差分があるか比較 (IDと更新日時で簡易チェック)
                         const isSame =
                             allLocalTriggers.length === cloudData.triggers.length &&
-                            cloudData.triggers.every(ct => {
+                            cloudData.triggers.every((ct: any) => {
                                 const lt = allLocalTriggers.find(t => t.id === ct.id);
                                 return lt && lt.updatedAt === ct.updatedAt;
                             });
@@ -352,7 +355,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
             }
         } catch (error: any) {
             console.error('SyncContext: Sync error:', error);
-
+            setSyncError(error.message || String(error));
             // Handle 401 Unauthorized (likely token expired)
             if (error.message?.includes('401') && Platform.OS === 'web') {
                 console.log('SyncContext: 401 Error detected on Web. Clearing tokens.');
@@ -432,6 +435,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
             isSyncing,
             lastSyncedAt,
             isInitialSyncDone,
+            syncError,
             performSync
         }}>
             {children}

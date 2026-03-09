@@ -65,6 +65,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 await Promise.all([scriptPromise, restoreWebSession()]);
                 setLoading(false);
             } else {
+                if (!process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID) {
+                    console.error('AuthContext: EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is not defined in .env! Sync will not work on Web.');
+                }
+
                 GoogleSignin.configure({
                     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
                     scopes: ['https://www.googleapis.com/auth/drive.appdata'],

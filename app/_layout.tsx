@@ -26,13 +26,36 @@ SplashScreen.preventAutoHideAsync();
 LogBox.ignoreLogs(['Unable to activate keep awake']);
 
 function SyncIndicator() {
-    const { isSyncing } = useSync();
+    const { isSyncing, lastSyncedAt, syncError } = useSync();
+    const colorScheme = useColorScheme();
+    const isDark = colorScheme === 'dark';
 
-    if (!isSyncing) return null;
+    if (!isSyncing && !lastSyncedAt && !syncError) return null;
+
+    const formatTime = (date: Date) => {
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
 
     return (
-        <View style={styles.syncIndicator}>
-            <ActivityIndicator size="small" color="#999" />
+        <View style={styles.syncIndicatorContainer}>
+            {isSyncing ? (
+                <View style={styles.syncRow}>
+                    <ActivityIndicator size="small" color={isDark ? '#aaa' : '#888'} />
+                    <Text style={[styles.syncText, { color: isDark ? '#aaa' : '#888' }]}>同期中...</Text>
+                </View>
+            ) : syncError ? (
+                <View style={styles.syncRow}>
+                    <Text style={[styles.syncText, { color: '#FF5252' }]} numberOfLines={1}>
+                        同期失敗: {syncError}
+                    </Text>
+                </View>
+            ) : lastSyncedAt ? (
+                <View style={styles.syncRow}>
+                    <Text style={[styles.syncText, { color: isDark ? '#666' : '#999' }]}>
+                        {formatTime(lastSyncedAt)} 同期済
+                    </Text>
+                </View>
+            ) : null}
         </View>
     );
 }
@@ -303,14 +326,21 @@ function RootLayoutContent() {
 }
 
 const styles = StyleSheet.create({
-    syncIndicator: {
+    syncIndicatorContainer: {
         position: 'absolute',
-        top: 55,
+        top: Platform.OS === 'web' ? 45 : 55,
         right: 15,
         zIndex: 9999,
+        backgroundColor: 'transparent',
+    },
+    syncRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
     },
     syncText: {
-        display: 'none',
+        fontSize: 10,
+        fontWeight: '500',
     },
     loadingContainer: {
         flex: 1,
