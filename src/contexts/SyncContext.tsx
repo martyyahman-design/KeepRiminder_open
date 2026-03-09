@@ -177,14 +177,18 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                         if (!localMemo) {
                             // 新規作成
                             console.log(`SyncContext: PULL - Creating new memo ${cloudMemo.id} (isDeleted: ${cloudMemo.isDeleted})`);
-                            await MemoRepo.upsertMemo(cloudMemo);
+                            await MemoRepo.upsertMemo({ ...cloudMemo, lastSyncedVersion: cloudMemo.version });
                             hasLocalChanges = true;
                         } else {
                             const cloudVersion = Number(cloudMemo.version) || 0;
                             const localVersion = Number(localMemo.version) || 0;
+                            const localLastSynced = Number(localMemo.lastSyncedVersion) || 0;
 
-                            // 競合保護 (Duplicate & Keep Both 戦略)
-                            if (dirtyMemosMap.has(localMemo.id) && cloudVersion > localVersion) {
+                            const isCloudChanged = cloudVersion > localLastSynced;
+                            const isLocalChanged = localVersion > localLastSynced;
+
+                            if (isCloudChanged && isLocalChanged) {
+                                // 競合検知: 自分も相手も変更している
                                 console.log(`SyncContext: PULL - Conflict detected on memo ${localMemo.id}. Duplicating local changes.`);
                                 await MemoRepo.duplicateMemo(localMemo);
 
@@ -194,12 +198,14 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                                     else window.alert(msg);
                                     conflictNotified = true;
                                 }
-                            }
-
-                            if (cloudVersion > localVersion || (cloudMemo.isDeleted && !localMemo.isDeleted)) {
-                                // Cloud が新しい、または Cloud で削除されているのにローカルで削除されていない
+                                // クラウドの内容で上書き
+                                console.log(`SyncContext: PULL - Overwriting ${localMemo.id} with cloud version ${cloudVersion}`);
+                                await MemoRepo.upsertMemo({ ...cloudMemo, lastSyncedVersion: cloudVersion });
+                                hasLocalChanges = true;
+                            } else if (isCloudChanged) {
+                                // 自分は変えていないが、相手が変わった（単純更新）
                                 console.log(`SyncContext: PULL - Updating memo ${cloudMemo.id} to version ${cloudVersion} (isDeleted: ${cloudMemo.isDeleted})`);
-                                await MemoRepo.upsertMemo(cloudMemo);
+                                await MemoRepo.upsertMemo({ ...cloudMemo, lastSyncedVersion: cloudVersion });
                                 hasLocalChanges = true;
                             }
                         }
