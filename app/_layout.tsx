@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Stack, router, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme, AppState, Alert, NativeModules, Platform, LogBox } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { MemoProvider } from '../src/contexts/MemoContext';
 import { AuthProvider } from '../src/contexts/AuthContext';
 import { SyncProvider } from '../src/contexts/SyncContext';
@@ -41,15 +42,18 @@ function SyncIndicator() {
             {isSyncing ? (
                 <View style={styles.syncRow}>
                     <ActivityIndicator size="small" color={isDark ? '#aaa' : '#888'} />
-                    <Text style={[styles.syncText, { color: isDark ? '#aaa' : '#888' }]}>同期中...</Text>
+                    {Platform.OS === 'web' && <Text style={[styles.syncText, { color: isDark ? '#aaa' : '#888' }]}>同期中...</Text>}
                 </View>
             ) : syncError ? (
                 <View style={styles.syncRow}>
-                    <Text style={[styles.syncText, { color: '#FF5252' }]} numberOfLines={1}>
-                        同期失敗: {syncError}
-                    </Text>
+                    <Ionicons name="warning" size={14} color="#FF5252" />
+                    {Platform.OS === 'web' && (
+                        <Text style={[styles.syncText, { color: '#FF5252' }]} numberOfLines={1}>
+                            同期失敗: {syncError}
+                        </Text>
+                    )}
                 </View>
-            ) : lastSyncedAt ? (
+            ) : lastSyncedAt && Platform.OS === 'web' ? (
                 <View style={styles.syncRow}>
                     <Text style={[styles.syncText, { color: isDark ? '#666' : '#999' }]}>
                         {formatTime(lastSyncedAt)} 同期済
@@ -328,8 +332,8 @@ function RootLayoutContent() {
 const styles = StyleSheet.create({
     syncIndicatorContainer: {
         position: 'absolute',
-        top: Platform.OS === 'web' ? 45 : 55,
-        right: 15,
+        top: Platform.OS === 'web' ? 45 : 62,
+        right: Platform.OS === 'web' ? 15 : 100, // Android ではアカウントアイコンの左側に配置
         zIndex: 9999,
         backgroundColor: 'transparent',
     },

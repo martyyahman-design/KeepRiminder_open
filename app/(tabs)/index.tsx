@@ -36,7 +36,7 @@ const CARD_WIDTH = (SCREEN_WIDTH - Spacing.lg * 2 - CARD_MARGIN) / 2;
 export default function MemoListScreen() {
     const { memos, loading, createMemo, updateMemo, deleteMemo, refreshMemos } = useMemos();
     const { user, signIn, signOut, loading: authLoading } = useAuth();
-    const { isSyncing, lastSyncedAt, performSync } = useSync();
+    const { isSyncing, lastSyncedAt, syncError, performSync } = useSync();
     const { isOnline } = useNetwork();
     const colors = useThemeColors();
     const colorScheme = useColorScheme();
@@ -360,12 +360,19 @@ export default function MemoListScreen() {
                     <View style={[styles.logoContainer, { backgroundColor: colors.primary + '15' }]}>
                         <Image source={require('../../assets/keepreminder_icon.png')} style={{ width: 26, height: 26, borderRadius: 6 }} />
                     </View>
-                    <Text style={[styles.headerTitle, { color: colors.text }]}>KeepReminder</Text>
-                    {lastSyncedAt && (
-                        <Text style={[styles.lastSyncText, { color: colors.textTertiary }]}>
-                            {lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })} 同期済
-                        </Text>
-                    )}
+                    <View>
+                        <Text style={[styles.headerTitle, { color: colors.text }]}>KeepReminder</Text>
+                        {lastSyncedAt && (
+                            <Text style={[styles.lastSyncText, { color: colors.textTertiary }]}>
+                                {lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })} 同期済
+                            </Text>
+                        )}
+                        {syncError && (
+                            <Text style={[styles.lastSyncText, { color: '#FF5252' }]} numberOfLines={1}>
+                                同期失敗
+                            </Text>
+                        )}
+                    </View>
                 </View>
 
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
@@ -414,6 +421,7 @@ export default function MemoListScreen() {
                                 <View style={styles.userIconPlaceholder}>
                                     <Ionicons name="person-circle" size={32} color={colors.primary} />
                                     {isSyncing && <View style={[styles.syncBadge, { backgroundColor: colors.success }]} />}
+                                    {syncError && <View style={[styles.syncBadge, { backgroundColor: '#FF5252' }]} />}
                                 </View>
                             )
                         ) : (
