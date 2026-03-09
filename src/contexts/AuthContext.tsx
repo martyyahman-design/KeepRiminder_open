@@ -91,6 +91,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 });
 
                 try {
+                    const projectId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.split('-')[0];
+                    console.log(`AuthContext: Native initialized. Client ID Prefix: ${projectId}`);
                     const hasLoggedIn = await AsyncStorage.getItem(HAS_LOGGED_IN_KEY);
                     if (hasLoggedIn === 'true' || await GoogleSignin.hasPreviousSignIn()) {
                         try {

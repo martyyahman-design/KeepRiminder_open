@@ -127,6 +127,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
             if (fileInfo) {
                 const fileId = fileInfo.id;
                 let cloudEtag = fileInfo.etag;
+                console.log(`SyncContext: Found existing cloud file. ID: ${fileId}, ETag: ${cloudEtag}`);
 
                 // 1. PUSH 競合チェック (Optimistic Locking)
                 if (mode === 'push') {
