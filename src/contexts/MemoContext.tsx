@@ -118,7 +118,8 @@ export function MemoProvider({ children }: { children: ReactNode }) {
                 }
                 return prev;
             });
-            if (Platform.OS === 'web') alert('削除しました');
+            // setMemos inside the catch or finally might be safer if we want to ensure sync,
+            // but the current local-first approach is fine.
         } catch (err) {
             console.error('Error deleting memo:', err);
             if (Platform.OS === 'web') alert('削除中にエラー: ' + err);
@@ -178,7 +179,6 @@ export function MemoProvider({ children }: { children: ReactNode }) {
             }
             await MemoRepo.emptyTrash();
             setDeletedMemos([]);
-            if (Platform.OS === 'web') alert('ごみ箱を空にしました');
         } catch (err) {
             console.error('Error emptying trash:', err);
             if (Platform.OS === 'web') alert('ごみ箱を空にする際にエラー: ' + err);

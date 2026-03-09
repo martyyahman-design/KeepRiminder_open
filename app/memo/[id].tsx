@@ -138,33 +138,11 @@ export default function MemoEditScreen() {
             return;
         }
 
-        const performDelete = async () => {
-            if (id) {
-                isDeleting.current = true;
-                await deleteMemo(id);
-                router.back();
-            }
-        };
-
-        if (Platform.OS === 'web') {
-            if (window.confirm('このメモを削除してもよろしいですか？')) {
-                await performDelete();
-            }
-            return;
+        if (id) {
+            isDeleting.current = true;
+            await deleteMemo(id);
+            router.back();
         }
-
-        Alert.alert(
-            'メモを削除',
-            'このメモを削除してもよろしいですか？',
-            [
-                { text: 'キャンセル', style: 'cancel' },
-                {
-                    text: '削除',
-                    style: 'destructive',
-                    onPress: performDelete,
-                },
-            ]
-        );
     };
 
     const handleDeleteTrigger = (triggerId: string) => {

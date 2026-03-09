@@ -129,9 +129,6 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                 if (mode === 'push') {
                     if (lastEtagRef.current && cloudEtag !== lastEtagRef.current) {
                         console.warn(`SyncContext: 競合を検知しました (Cloud Etag: ${cloudEtag}, Local Etag: ${lastEtagRef.current})。PULLを強制します。`);
-                        const msg = '他のデバイスで更新が行われたため、最新データを取得します。現在の編集内容を反映するため、もう一度保存/同期を行ってください。';
-                        if (Platform.OS !== 'web') Alert.alert('同期エラー', msg);
-                        else window.alert(msg);
                         mode = 'pull'; // 強制PULLに切り替え
                     }
                 }
