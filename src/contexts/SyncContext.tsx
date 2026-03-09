@@ -119,7 +119,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         isSyncingRef.current = true;
         setIsSyncing(true);
 
-        console.log(`SyncContext: performSync(${mode}) started.`);
+        console.log(`SyncContext: performSync(${mode}) started. Token prefix: ${accessToken?.substring(0, 10)}...`);
         setSyncError(null);
         try {
             const fileInfo = await GoogleDriveService.findFile(tokenToUse, DB_FILE_NAME);

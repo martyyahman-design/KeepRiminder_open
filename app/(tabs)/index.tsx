@@ -362,16 +362,15 @@ export default function MemoListScreen() {
                     </View>
                     <View>
                         <Text style={[styles.headerTitle, { color: colors.text }]}>KeepReminder</Text>
-                        {lastSyncedAt && (
-                            <Text style={[styles.lastSyncText, { color: colors.textTertiary }]}>
-                                {lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })} 同期済
-                            </Text>
-                        )}
-                        {syncError && (
+                        {syncError ? (
                             <Text style={[styles.lastSyncText, { color: '#FF5252' }]} numberOfLines={1}>
                                 同期失敗
                             </Text>
-                        )}
+                        ) : lastSyncedAt ? (
+                            <Text style={[styles.lastSyncText, { color: colors.textTertiary }]}>
+                                {lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })} 同期済
+                            </Text>
+                        ) : null}
                     </View>
                 </View>
 

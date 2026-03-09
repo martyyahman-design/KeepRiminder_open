@@ -41,9 +41,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const storedUser = localStorage.getItem(USER_KEY);
             const storedToken = localStorage.getItem(ACCESS_TOKEN_KEY);
             if (storedUser && storedToken) {
-                setUser(JSON.parse(storedUser));
-                setAccessToken(storedToken);
-                console.log('AuthContext: Web session restored');
+                // Verify token validity
+                try {
+                    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                        headers: { Authorization: `Bearer ${storedToken}` }
+                    });
+                    if (res.ok) {
+                        setUser(JSON.parse(storedUser));
+                        setAccessToken(storedToken);
+                        const projectId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.split('-')[0];
+                        console.log(`AuthContext: Web session restored. Project ID Prefix: ${projectId}`);
+                    } else {
+                        console.warn('AuthContext: Stored token is invalid or expired. Clearing session.');
+                        localStorage.removeItem(USER_KEY);
+                        localStorage.removeItem(ACCESS_TOKEN_KEY);
+                    }
+                } catch (err) {
+                    console.error('AuthContext: Failed to verify stored token', err);
+                }
             }
         } catch (e) {
             console.error('AuthContext: Failed to restore Web session', e);
@@ -147,6 +162,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                         setAccessToken(response.access_token);
                         localStorage.setItem(ACCESS_TOKEN_KEY, response.access_token);
+
+                        const projectId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.split('-')[0];
+                        console.log(`AuthContext: Login successful. Project ID Prefix: ${projectId}`);
 
                         try {
                             const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
