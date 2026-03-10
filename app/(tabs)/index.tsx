@@ -36,7 +36,7 @@ const CARD_WIDTH = (SCREEN_WIDTH - Spacing.lg * 2 - CARD_MARGIN) / 2;
 export default function MemoListScreen() {
     const { memos, loading, createMemo, updateMemo, deleteMemo, refreshMemos } = useMemos();
     const { user, signIn, signOut, loading: authLoading } = useAuth();
-    const { isSyncing, lastSyncedAt, syncError, performSync } = useSync();
+    const { isSyncing, lastSyncedAt, syncError, performSync, cloudFileId, projectIdPrefix } = useSync();
     const { isOnline } = useNetwork();
     const colors = useThemeColors();
     const colorScheme = useColorScheme();
@@ -521,6 +521,26 @@ export default function MemoListScreen() {
                                     <Ionicons name="log-out-outline" size={20} color={colors.error} />
                                     <Text style={[styles.logoutText, { color: colors.error }]}>ログアウト</Text>
                                 </TouchableOpacity>
+
+                                <View style={[styles.menuSeparator, { backgroundColor: colors.border }]} />
+
+                                <View style={styles.debugSection}>
+                                    <Text style={[styles.debugHeader, { color: colors.textTertiary }]}>デバッグ情報</Text>
+                                    <View style={styles.debugRow}>
+                                        <Text style={[styles.debugLabel, { color: colors.textSecondary }]}>接続プロジェクトID:</Text>
+                                        <Text style={[styles.debugValue, { color: colors.text }]}>{projectIdPrefix || '読み込み中...'}</Text>
+                                    </View>
+                                    <View style={styles.debugRow}>
+                                        <Text style={[styles.debugLabel, { color: colors.textSecondary }]}>クラウドファイルID:</Text>
+                                        <Text style={[styles.debugValue, { color: colors.text }]} numberOfLines={1} ellipsizeMode="middle">
+                                            {cloudFileId ? `${cloudFileId.substring(0, 8)}...` : '未検出'}
+                                        </Text>
+                                    </View>
+                                    <View style={styles.debugRow}>
+                                        <Text style={[styles.debugLabel, { color: colors.textSecondary }]}>ファイル名:</Text>
+                                        <Text style={[styles.debugValue, { color: colors.text }]}>v2 (最新)</Text>
+                                    </View>
+                                </View>
                             </>
                         )}
                     </Pressable>
@@ -1067,6 +1087,30 @@ const styles = StyleSheet.create({
     logoutText: {
         fontSize: FontSize.sm,
         fontWeight: '700',
+    },
+    debugSection: {
+        marginTop: Spacing.xs,
+        paddingTop: Spacing.xs,
+    },
+    debugHeader: {
+        fontSize: 10,
+        fontWeight: '700',
+        marginBottom: 6,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    debugRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 4,
+    },
+    debugLabel: {
+        fontSize: 10,
+    },
+    debugValue: {
+        fontSize: 10,
+        fontWeight: '600',
+        fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     },
     webNotice: {
         flexDirection: 'row',

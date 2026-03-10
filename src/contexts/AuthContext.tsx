@@ -22,6 +22,7 @@ interface AuthContextType {
     signOut: () => Promise<void>;
     getFreshToken: () => Promise<string | null>;
     clearAccessToken: () => void;
+    refreshNativeToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -141,8 +142,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setAccessToken(tokens.accessToken);
             return tokens.accessToken;
         } catch (e) {
-            console.error('AuthContext: Failed to refresh native token', e);
+            console.error('AuthContext: Failed to get native token', e);
             return accessToken;
+        }
+    }, [accessToken]);
+
+    const refreshNativeToken = useCallback(async () => {
+        if (Platform.OS === 'web') return accessToken;
+        try {
+            console.log('AuthContext: Refreshing native token (clearing cache)...');
+            await GoogleSignin.clearCachedAccessToken(accessToken || '');
+            const tokens = await GoogleSignin.getTokens();
+            setAccessToken(tokens.accessToken);
+            return tokens.accessToken;
+        } catch (e) {
+            console.error('AuthContext: Failed to refresh native token', e);
+            return null;
         }
     }, [accessToken]);
 
@@ -251,7 +266,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, []);
 
     return (
-        <AuthContext.Provider value={{ user, loading, accessToken, signIn, signOut, getFreshToken, clearAccessToken }}>
+        <AuthContext.Provider value={{ user, loading, accessToken, signIn, signOut, getFreshToken, clearAccessToken, refreshNativeToken }}>
             {children}
         </AuthContext.Provider>
     );

@@ -20,6 +20,8 @@ interface SyncContextType {
     lastSyncedAt: Date | null;
     isInitialSyncDone: boolean;
     syncError: string | null;
+    cloudFileId: string | null;
+    projectIdPrefix: string | null;
     performSync: (mode?: 'pull' | 'push') => Promise<void>;
 }
 
@@ -28,7 +30,7 @@ const SyncContext = createContext<SyncContextType | undefined>(undefined);
 const DB_FILE_NAME = 'keepreminder_backup_v2.json';
 
 export function SyncProvider({ children }: { children: ReactNode }) {
-    const { user, accessToken, getFreshToken, clearAccessToken } = useAuth();
+    const { user, accessToken, getFreshToken, clearAccessToken, refreshNativeToken } = useAuth();
     const { memos, deletedMemos, refreshMemos } = useMemos();
     const [isSyncing, setIsSyncing] = useState(false);
     const [isInitialSyncDone, setIsInitialSyncDone] = useState(false);
@@ -36,6 +38,8 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
     const [lastSyncedCloudUpdatedAt, setLastSyncedCloudUpdatedAt] = useState<string | null>(null);
     const [lastEtag, setLastEtag] = useState<string | null>(null);
+    const [cloudFileId, setCloudFileId] = useState<string | null>(null);
+    const [projectIdPrefix, setProjectIdPrefix] = useState<string | null>(null);
     const [isStateLoaded, setIsStateLoaded] = useState(false);
     const prevMemosCount = useRef(memos.length);
     const prevDeletedCount = useRef(deletedMemos.length);
@@ -110,6 +114,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
             return;
         }
 
+        const projectId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.split('-')[0] || null;
+        setProjectIdPrefix(projectId);
+
         // IMPORTANT: Prevent PUSH if the first PULL (initial sync) hasn't completed yet.
         if (mode === 'push' && !isInitialSyncDoneRef.current) {
             console.log(`SyncContext: performSync(push) blocked until initial pull is done.`);
@@ -122,11 +129,28 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         console.log(`SyncContext: performSync(${mode}) started. Token prefix: ${accessToken?.substring(0, 10)}...`);
         setSyncError(null);
         try {
-            const fileInfo = await GoogleDriveService.findFile(tokenToUse, DB_FILE_NAME);
+            let fileInfo;
+            try {
+                fileInfo = await GoogleDriveService.findFile(tokenToUse, DB_FILE_NAME);
+            } catch (findError: any) {
+                if (findError.message.includes('401') && Platform.OS !== 'web') {
+                    console.log('SyncContext: 401 error detected on native. Attempting token refresh...');
+                    const newToken = await refreshNativeToken();
+                    if (newToken) {
+                        fileInfo = await GoogleDriveService.findFile(newToken, DB_FILE_NAME);
+                        tokenToUse = newToken;
+                    } else {
+                        throw findError;
+                    }
+                } else {
+                    throw findError;
+                }
+            }
 
             if (fileInfo) {
                 const fileId = fileInfo.id;
                 let cloudEtag = fileInfo.etag;
+                setCloudFileId(fileId);
                 console.log(`SyncContext: Found existing cloud file. ID: ${fileId}, ETag: ${cloudEtag}`);
 
                 // 1. PUSH 競合チェック (Optimistic Locking)
@@ -437,6 +461,8 @@ export function SyncProvider({ children }: { children: ReactNode }) {
             lastSyncedAt,
             isInitialSyncDone,
             syncError,
+            cloudFileId,
+            projectIdPrefix,
             performSync
         }}>
             {children}
