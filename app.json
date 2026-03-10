@@ -8,7 +8,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
     "scheme": "keepreminder",
-    "baseUrl": "/KeepRiminder_open/",
+    "baseUrl": "/KeepRiminder_open",
     "splash": {
       "image": "./assets/keepreminder_icon.png",
       "resizeMode": "contain",
