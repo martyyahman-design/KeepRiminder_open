@@ -86,6 +86,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         loadSyncState();
     }, []);
 
+    useEffect(() => {
+        const projectId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.split('-')[0] || null;
+        console.log('SyncContext: Project ID identified:', projectId);
+        setProjectIdPrefix(projectId);
+    }, []);
+
     const performSync = useCallback(async (mode: 'pull' | 'push' = 'pull') => {
         if (!isStateLoaded) {
             console.log(`SyncContext: performSync(${mode}) deferred - state not loaded yet.`);
@@ -114,8 +120,6 @@ export function SyncProvider({ children }: { children: ReactNode }) {
             return;
         }
 
-        const projectId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.split('-')[0] || null;
-        setProjectIdPrefix(projectId);
 
         // IMPORTANT: Prevent PUSH if the first PULL (initial sync) hasn't completed yet.
         if (mode === 'push' && !isInitialSyncDoneRef.current) {

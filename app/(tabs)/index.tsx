@@ -37,6 +37,7 @@ export default function MemoListScreen() {
     const { memos, loading, createMemo, updateMemo, deleteMemo, refreshMemos } = useMemos();
     const { user, signIn, signOut, loading: authLoading } = useAuth();
     const { isSyncing, lastSyncedAt, syncError, performSync, cloudFileId, projectIdPrefix } = useSync();
+    console.log('DEBUG: account menu state', { user: !!user, projectIdPrefix, cloudFileId });
     const { isOnline } = useNetwork();
     const colors = useThemeColors();
     const colorScheme = useColorScheme();

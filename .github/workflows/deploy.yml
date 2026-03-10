@@ -4,10 +4,22 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch: # GitHubのUIから手動実行を可能にする
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,16 +34,19 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build Web
-        run: npm run export:web
+      - name: Export Web
+        run: npx expo export -p web
         env:
           EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
 
-      - name: Deploy to Public Repo
-        uses: JamesIves/github-pages-deploy-action@v4
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          folder: dist
-          repository-name: martyyahman-design/KeepRiminder_open
-          branch: main # 公開リポジトリのデプロイ先ブランチ
-          token: ${{ secrets.DEPLOY_TOKEN }}
-          clean: true
+          path: 'dist'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
